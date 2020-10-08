@@ -3,7 +3,11 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.30503.244
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DIDA-GSTORE", "DIDA-GSTORE\DIDA-GSTORE.csproj", "{DBD38B70-9980-4CE7-8B3E-0DB40AFFC2A2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Server", "Server\Server.csproj", "{1901E369-AD57-4F91-8188-024F222FB26B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Client", "Client\Client.csproj", "{39055FAB-339E-43EA-87FC-CB330D799AF1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PuppetMaster", "PuppetMaster\PuppetMaster.csproj", "{1B533A65-9EC2-44E5-A4FC-51EC0EEC599D}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -11,10 +15,18 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{DBD38B70-9980-4CE7-8B3E-0DB40AFFC2A2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{DBD38B70-9980-4CE7-8B3E-0DB40AFFC2A2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{DBD38B70-9980-4CE7-8B3E-0DB40AFFC2A2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{DBD38B70-9980-4CE7-8B3E-0DB40AFFC2A2}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1901E369-AD57-4F91-8188-024F222FB26B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1901E369-AD57-4F91-8188-024F222FB26B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1901E369-AD57-4F91-8188-024F222FB26B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1901E369-AD57-4F91-8188-024F222FB26B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{39055FAB-339E-43EA-87FC-CB330D799AF1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{39055FAB-339E-43EA-87FC-CB330D799AF1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{39055FAB-339E-43EA-87FC-CB330D799AF1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{39055FAB-339E-43EA-87FC-CB330D799AF1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{1B533A65-9EC2-44E5-A4FC-51EC0EEC599D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{1B533A65-9EC2-44E5-A4FC-51EC0EEC599D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{1B533A65-9EC2-44E5-A4FC-51EC0EEC599D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{1B533A65-9EC2-44E5-A4FC-51EC0EEC599D}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
