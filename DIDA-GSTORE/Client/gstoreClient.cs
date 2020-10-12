@@ -19,6 +19,13 @@ class GSTOREClient {
             }  
 
             file.Close();
+
+            // We need to stay up, in order to respond to status commands by the Puppet Master
+            // Start gRPC server of connection with PM
+            // For now, just wait for user input
+            Console.ReadKey();
+
+
         } catch (System.IO.FileNotFoundException) {
             Console.WriteLine("File not found. Exiting...");
             return;
