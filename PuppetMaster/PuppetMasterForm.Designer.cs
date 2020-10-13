@@ -40,6 +40,7 @@
             this.commandBox.Name = "commandBox";
             this.commandBox.Size = new System.Drawing.Size(672, 34);
             this.commandBox.TabIndex = 0;
+            this.commandBox.KeyUp += new System.Windows.Forms.KeyEventHandler(this.commandBox_KeyUp);
             // 
             // executeButton
             // 
@@ -49,6 +50,7 @@
             this.executeButton.TabIndex = 1;
             this.executeButton.Text = "Execute";
             this.executeButton.UseVisualStyleBackColor = true;
+            this.executeButton.Click += new System.EventHandler(this.executeButton_Click);
             // 
             // logBox
             // 

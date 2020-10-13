@@ -20,7 +20,7 @@ namespace PuppetMaster
             PuppetMaster pm = new PuppetMaster();
             PuppetMasterForm form = new PuppetMasterForm();
             pm.LinkForm(form);
-            Application.Run(new PuppetMasterForm());
+            Application.Run(form);
         }
     }
 }
