@@ -12,7 +12,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-	  <!--Add gRPC Line-->
+	<Protobuf Include="..\Protos\ClientServer.proto" GrpcServices="Client" Link="protos\ClientServer.proto" />
   </ItemGroup>
 
 </Project>

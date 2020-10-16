@@ -1,8 +1,9 @@
 ﻿using System;
+using Grpc.Core;
 
 namespace Server
 {
-    class Program
+    public class Program
     {
         static void Main(string[] args)
         {
