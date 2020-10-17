@@ -7,11 +7,14 @@ using Grpc.Core.Utils;
 
 namespace Server
 {
-    public class Server : ClientServerService.ClientServerServiceBase
+    public class ClientServerService : ClientServerGrpcService.ClientServerGrpcServiceBase
     {
-        public Server()
-        {
+        private int delay = 0;
+        public ClientServerService() {}
 
+        public ClientServerService(int delay)
+        {
+            this.delay = delay;
         }
 
         // Read Object
@@ -28,7 +31,7 @@ namespace Server
 
             return new ReadObjectReply
             {
-                Value = ""
+                Value = "test"
             };
         }
 

@@ -1,6 +1,6 @@
 syntax="proto3";
 
-service ClientServerService {
+service ClientServerGrpcService {
 	rpc ReadObject (ReadObjectRequest) returns (ReadObjectReply);
 	rpc WriteObject (WriteObjectRequest) returns (WriteObjectReply);
 	rpc ListServer (ListServerRequest) returns (ListServerReply);
