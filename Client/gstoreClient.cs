@@ -105,7 +105,7 @@ namespace Client
 
                     System.IO.StreamReader file = new System.IO.StreamReader(args[0]);
                     while ((line = file.ReadLine()) != null) {
-                        string[] cmd = line.Split();
+                        string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
                         CommandDispatcher(cmd, file, client);
                     }
 
