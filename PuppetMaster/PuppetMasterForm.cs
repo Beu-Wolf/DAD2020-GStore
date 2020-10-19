@@ -3,7 +3,9 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Data;
 using System.Drawing;
+using System.IO;
 using System.Linq;
+using System.Security;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -14,6 +16,7 @@ namespace PuppetMaster
     {
         private delegate void LogDelegate(string msg);
         private PuppetMaster PuppetMaster;
+        private OpenFileDialog FileDialog = new OpenFileDialog();
         public PuppetMasterForm()
         {
             InitializeComponent();
@@ -33,7 +36,7 @@ namespace PuppetMaster
             }
             else
             {
-                logBox.Text += msg + "\r\n";
+                logBox.AppendText(msg + "\r\n");
             }
         }
 
@@ -43,15 +46,34 @@ namespace PuppetMaster
             commandBox.Clear();
         }
 
-        private void executeButton_Click(object sender, EventArgs e)
+        private void RunScriptButton_Click(object sender, EventArgs e)
         {
-            sendCommandToPuppetMaster();
+            if (this.FileDialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    var streamReader = new StreamReader(this.FileDialog.FileName);
+                    String line;
+                    while ((line = streamReader.ReadLine()) != null)
+                    {
+                        this.PuppetMaster.ParseCommand(line);
+                    }
+
+                }
+                catch (SecurityException ex)
+                {
+                    MessageBox.Show($"Security Error. Message: {ex.Message}\n\n" +
+                        $"Details: {ex.StackTrace}");
+                }
+            }
         }
 
-        private void commandBox_KeyUp(object sender, KeyEventArgs e)
+        private void commandBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
             {
+                e.Handled = true;
+                e.SuppressKeyPress = true;
                 sendCommandToPuppetMaster();
             }
         }

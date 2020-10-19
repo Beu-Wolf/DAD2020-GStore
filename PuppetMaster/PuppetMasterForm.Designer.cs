@@ -40,7 +40,7 @@
             this.commandBox.Name = "commandBox";
             this.commandBox.Size = new System.Drawing.Size(672, 34);
             this.commandBox.TabIndex = 0;
-            this.commandBox.KeyUp += new System.Windows.Forms.KeyEventHandler(this.commandBox_KeyUp);
+            this.commandBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.commandBox_KeyDown);
             // 
             // executeButton
             // 
@@ -48,9 +48,9 @@
             this.executeButton.Name = "executeButton";
             this.executeButton.Size = new System.Drawing.Size(98, 34);
             this.executeButton.TabIndex = 1;
-            this.executeButton.Text = "Execute";
+            this.executeButton.Text = "Run Script";
             this.executeButton.UseVisualStyleBackColor = true;
-            this.executeButton.Click += new System.EventHandler(this.executeButton_Click);
+            this.executeButton.Click += new System.EventHandler(this.RunScriptButton_Click);
             // 
             // logBox
             // 
@@ -58,6 +58,7 @@
             this.logBox.Multiline = true;
             this.logBox.Name = "logBox";
             this.logBox.ReadOnly = true;
+            this.logBox.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
             this.logBox.Size = new System.Drawing.Size(776, 381);
             this.logBox.TabIndex = 2;
             // 
