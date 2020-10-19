@@ -40,6 +40,11 @@ namespace PuppetMaster
             }
         }
 
+        public void Error(string msg)
+        {
+            Log("[ERROR] " + msg);
+        }
+
         private void sendCommandToPuppetMaster()
         {
             this.PuppetMaster.ParseCommand(commandBox.Text);
