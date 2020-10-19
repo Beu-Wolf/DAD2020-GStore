@@ -16,7 +16,11 @@ namespace PuppetMaster
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new Form1());
+
+            PuppetMaster pm = new PuppetMaster();
+            PuppetMasterForm form = new PuppetMasterForm();
+            pm.LinkForm(form);
+            Application.Run(form);
         }
     }
 }
