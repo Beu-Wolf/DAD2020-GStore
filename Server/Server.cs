@@ -62,8 +62,7 @@ namespace Server
 
         public ListServerReply ListMe(ListServerRequest request)
         {
-            Console.WriteLine("Received ListServer with params:");
-            Console.WriteLine($"Partition_id: {request.ServerId}");
+            Console.WriteLine("Received ListServer");
 
             List<ObjectInfo> lst = new List<ObjectInfo>();
 
@@ -88,15 +87,14 @@ namespace Server
         }
 
         // Call to List Global
-        public override Task<ListGlobalReply> ListGlobal(ListServerRequest request, ServerCallContext context)
+        public override Task<ListGlobalReply> ListGlobal(ListGlobalRequest request, ServerCallContext context)
         {
             return Task.FromResult(ListMeGlobal(request));
         }
 
-        public ListGlobalReply ListMeGlobal(ListServerRequest request)
+        public ListGlobalReply ListMeGlobal(ListGlobalRequest request)
         {
-            Console.WriteLine("Received ListGlobal with params:");
-            Console.WriteLine($"Server_id: {request.ServerId}");
+            Console.WriteLine("Received ListGlobal");
             List<Key> lst = new List<Key>
             {
                 new Key

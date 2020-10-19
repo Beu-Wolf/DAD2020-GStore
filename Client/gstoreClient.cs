@@ -67,17 +67,16 @@ namespace Client
         {
             //if (Channel.Target != Dict.UrlOf(server_id))
             // New connection to correct URL
-            ListServerRequest request = new ListServerRequest
-            {
-                ServerId = server_id
-            };
+            ListServerRequest request = new ListServerRequest();
             var reply = Client.ListServer(request);
             Console.WriteLine("Received: "  + reply.ToString());
         }
 
         public void ListGlobal()
         {
-            // TODO
+            ListGlobalRequest request = new ListGlobalRequest();
+            var reply = Client.ListGlobal(request);
+            Console.WriteLine("Received: " + reply.ToString());
         }
 
     }

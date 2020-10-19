@@ -4,7 +4,7 @@ service ClientServerGrpcService {
 	rpc ReadObject (ReadObjectRequest) returns (ReadObjectReply);
 	rpc WriteObject (WriteObjectRequest) returns (WriteObjectReply);
 	rpc ListServer (ListServerRequest) returns (ListServerReply);
-	rpc ListGlobal (ListServerRequest) returns (ListGlobalReply);
+	rpc ListGlobal (ListGlobalRequest) returns (ListGlobalReply);
 }
 
 message Key {
@@ -38,7 +38,11 @@ message WriteObjectReply {
 }
 
 message ListServerRequest {
-	int64 server_id = 1;
+
+}
+
+message ListGlobalRequest {
+
 }
 
 message ListServerReply {
