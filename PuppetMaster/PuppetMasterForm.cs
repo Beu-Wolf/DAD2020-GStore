@@ -45,10 +45,10 @@ namespace PuppetMaster
             Log("[ERROR] " + msg);
         }
 
-        private void sendCommandToPuppetMaster()
+        private void SendCommandToPuppetMaster()
         {
-            this.PuppetMaster.ParseCommand(commandBox.Text);
-            commandBox.Clear();
+            this.PuppetMaster.ParseCommand(CommandBox.Text);
+            CommandBox.Clear();
         }
 
         private void RunScriptButton_Click(object sender, EventArgs e)
@@ -73,13 +73,13 @@ namespace PuppetMaster
             }
         }
 
-        private void commandBox_KeyDown(object sender, KeyEventArgs e)
+        private void CommandBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Enter)
             {
                 e.Handled = true;
                 e.SuppressKeyPress = true;
-                sendCommandToPuppetMaster();
+                SendCommandToPuppetMaster();
             }
         }
     }

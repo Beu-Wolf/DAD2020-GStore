@@ -28,19 +28,19 @@
         /// </summary>
         private void InitializeComponent()
         {
-            this.commandBox = new System.Windows.Forms.TextBox();
+            this.CommandBox = new System.Windows.Forms.TextBox();
             this.executeButton = new System.Windows.Forms.Button();
             this.logBox = new System.Windows.Forms.TextBox();
             this.SuspendLayout();
             // 
-            // commandBox
+            // CommandBox
             // 
-            this.commandBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 13.8F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.commandBox.Location = new System.Drawing.Point(12, 12);
-            this.commandBox.Name = "commandBox";
-            this.commandBox.Size = new System.Drawing.Size(672, 34);
-            this.commandBox.TabIndex = 0;
-            this.commandBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.commandBox_KeyDown);
+            this.CommandBox.Font = new System.Drawing.Font("Microsoft Sans Serif", 13.8F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+            this.CommandBox.Location = new System.Drawing.Point(12, 12);
+            this.CommandBox.Name = "CommandBox";
+            this.CommandBox.Size = new System.Drawing.Size(672, 34);
+            this.CommandBox.TabIndex = 0;
+            this.CommandBox.KeyDown += new System.Windows.Forms.KeyEventHandler(this.CommandBox_KeyDown);
             // 
             // executeButton
             // 
@@ -69,7 +69,7 @@
             this.ClientSize = new System.Drawing.Size(800, 450);
             this.Controls.Add(this.logBox);
             this.Controls.Add(this.executeButton);
-            this.Controls.Add(this.commandBox);
+            this.Controls.Add(this.CommandBox);
             this.Name = "PuppetMasterForm";
             this.Text = "PuppetMaster";
             this.ResumeLayout(false);
@@ -79,7 +79,7 @@
 
         #endregion
 
-        private System.Windows.Forms.TextBox commandBox;
+        private System.Windows.Forms.TextBox CommandBox;
         private System.Windows.Forms.Button executeButton;
         private System.Windows.Forms.TextBox logBox;
     }
