@@ -148,7 +148,7 @@ namespace PuppetMaster
 
             return;
         ServerUsage:
-            this.Form.Error("Server usage: Server server_id");
+            this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
 
         private void HandleReplicationFactorCommand(string[] args)
