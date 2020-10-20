@@ -1,5 +1,6 @@
 ﻿using System;
 using Grpc.Core;
+using Grpc.Net.Client;
 
 namespace Server
 {
@@ -14,15 +15,29 @@ namespace Server
 
         static void Main(string[] args)
         {
+            if (args.Length != 2)
+            {
+                Console.WriteLine("Usage: Server.exe host port");
+                return;
+            }
 
-            int Port = 10001;
-            string host = "localhost"; // Maybe pass as parameter when instanciating server
+
+            if(!int.TryParse(args[1], out int Port))
+            {
+                Console.WriteLine("Invalid port value");
+                return;
+            }
+
+            string host = args[0]; // Maybe pass as parameter when instanciating server
 
             // Dictionary with <server_id, URL>
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {
-                Services = { ClientServerGrpcService.BindService(new ClientServerService())},
+                Services = { 
+                    ClientServerGrpcService.BindService(new ClientServerService()), 
+                    ServerSyncGrpcService.BindService(new ServerSyncService())
+                },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };
 
