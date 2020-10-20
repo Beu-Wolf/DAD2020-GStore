@@ -12,7 +12,7 @@ message LockObjectRequest {
 }
 
 message LockObjectReply {
-	bool ack = 1;
+	bool success = 1;
 }
 
 message ReleaseObjectLockRequest {
@@ -21,6 +21,6 @@ message ReleaseObjectLockRequest {
 }
 
 message ReleaseObjectLockReply {
-	bool ack = 1;
+	bool success = 1;
 }
 

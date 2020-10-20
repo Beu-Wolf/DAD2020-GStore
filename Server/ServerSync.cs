@@ -23,7 +23,7 @@ namespace Server
             Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
             return new LockObjectReply
             {
-                Ack = false
+                Success = false
             };
         }
 
@@ -40,7 +40,7 @@ namespace Server
 
             return new ReleaseObjectLockReply
             {
-                Ack = false
+                Success = false
             };
         }
 
