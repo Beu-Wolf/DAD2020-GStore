@@ -1,0 +1,26 @@
+syntax="proto3";
+
+import "ClientServer.proto";
+
+service ServerSyncGrpcService {
+	rpc LockObject (LockObjectRequest) returns (LockObjectReply);
+	rpc ReleaseObjectLock (ReleaseObjectLockRequest) returns (ReleaseObjectLockReply);
+}
+
+message LockObjectRequest {
+	Key key = 1;
+}
+
+message LockObjectReply {
+	bool ack = 1;
+}
+
+message ReleaseObjectLockRequest {
+	Key key = 1;
+	string value = 2;
+}
+
+message ReleaseObjectLockReply {
+	bool ack = 1;
+}
+
