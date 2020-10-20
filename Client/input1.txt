@@ -1,4 +1,4 @@
 begin-repeat 3
-write part-1 obj-$i "value-$i"
-read part-$i obj-$i cena$i
+write $i $i "value-$i"
+read $i $i $i
 end-repeat

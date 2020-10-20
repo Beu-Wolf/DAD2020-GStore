@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -12,7 +12,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-	<!--dont forget to add protobuff file to here--> 
+	<Protobuf Include="..\Protos\ClientServer.proto" GrpcServices="Server" Link="protos\ClientServer.proto" />
   </ItemGroup>
 
 </Project>
