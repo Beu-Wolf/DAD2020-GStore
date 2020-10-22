@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Collections.Generic;
 using Grpc.Net.Client;
+using Grpc.Core;
 
 namespace Client
 {
@@ -44,8 +45,15 @@ namespace Client
                     ObjectId = object_id
                 }
             };
-            var reply = Client.ReadObject(request);
-            Console.WriteLine("Received: " + reply.Value);
+            try
+            {
+                var reply = Client.ReadObject(request);
+                Console.WriteLine("Received: " + reply.Value);
+            } catch (RpcException e)
+            {
+                Console.WriteLine($"Error: {e.Status.StatusCode}");
+                Console.WriteLine($"Error message: {e.Status.Detail}");
+            }
         }
 
         public void WriteObject(int partition_id, int object_id, string value)

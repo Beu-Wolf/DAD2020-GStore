@@ -1,17 +1,39 @@
 ﻿using System;
+using System.Collections.Generic;
 using Grpc.Core;
 using Grpc.Net.Client;
 
 namespace Server
 {
+
+    public class ObjectKey
+    {
+        private readonly long Partition_id;
+
+        private readonly long Object_id;
+
+        public ObjectKey(long partition_id, long object_id)
+        {
+            Partition_id = partition_id;
+            Object_id = object_id;
+        }
+
+        public class ObjectKeyComparer : IEqualityComparer<ObjectKey>
+        {
+            public bool Equals(ObjectKey objectKey1, ObjectKey objectKey2)
+            {
+                return objectKey1.Partition_id == objectKey2.Partition_id && objectKey1.Object_id == objectKey2.Object_id;
+            }
+
+            public int GetHashCode(ObjectKey objectKey)
+            {
+                return objectKey.Object_id.GetHashCode() ^ objectKey.Partition_id.GetHashCode();
+            }
+        }
+    }
+
     public class Program
     {
-
-        // My partitions
-        // Partitions which I'm master of
-        // Select random port to be in, like 10000 + random(partition which I'm master)
-
-        // List of other servers
 
         static void Main(string[] args)
         {
@@ -30,13 +52,24 @@ namespace Server
 
             string host = args[0]; // Maybe pass as parameter when instanciating server
 
-            // Dictionary with <server_id, URL>
+            // Dictionary with values
+            Dictionary<ObjectKey, string> keyValuePairs = new Dictionary<ObjectKey, string>(new ObjectKey.ObjectKeyComparer());
+
+
+            // Dictionary <partition_id, List<URLs>> all servers by partition
+            Dictionary<long, List<string>> ServersByPartition = new Dictionary<long, List<string>>
+            {
+                {1, new List<string> {"http://localhost:10001", "http://localhost:10002"} }
+            };
+
+            // List partition which im master of
+            List<long> MasterPartitions = new List<long> { Port == 10001 ? 1 : 0 };
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {
                 Services = { 
-                    ClientServerGrpcService.BindService(new ClientServerService()), 
-                    ServerSyncGrpcService.BindService(new ServerSyncService())
+                    ClientServerGrpcService.BindService(new ClientServerService(keyValuePairs)), 
+                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };

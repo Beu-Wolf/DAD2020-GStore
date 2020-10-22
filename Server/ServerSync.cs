@@ -4,6 +4,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Core.Utils;
+using System.Linq;
 
 namespace Server
 {
@@ -11,6 +12,13 @@ namespace Server
     public class ServerSyncService : ServerSyncGrpcService.ServerSyncGrpcServiceBase
     {
         // Dict with all values
+        private readonly Dictionary<ObjectKey, string> KeyValuePairs;
+
+        public ServerSyncService(Dictionary<ObjectKey, string> keyValuePairs)
+        {
+            KeyValuePairs = keyValuePairs;
+        }
+
 
         public override Task<LockObjectReply> LockObject(LockObjectRequest request, ServerCallContext context)
         {

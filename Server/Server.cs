@@ -9,12 +9,18 @@ namespace Server
 {
     public class ClientServerService : ClientServerGrpcService.ClientServerGrpcServiceBase
     {
-        private int delay = 0;
+        private int myPort;
+        private int myHost;
+
+
+
+        public Dictionary<ObjectKey, string> KeyValuePairs;
+
         public ClientServerService() {}
 
-        public ClientServerService(int delay)
+        public ClientServerService(Dictionary<ObjectKey, string> keyValuePairs)
         {
-            this.delay = delay;
+            KeyValuePairs = keyValuePairs;
         }
 
         // Read Object
@@ -29,10 +35,18 @@ namespace Server
             Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
             Console.WriteLine($"Object_id: {request.Key.ObjectId}");
 
-            return new ReadObjectReply
+            if(KeyValuePairs.TryGetValue(new ObjectKey(request.Key.PartitionId, request.Key.ObjectId), out string value)) {
+                return new ReadObjectReply
+                {
+                    Value = value
+                };
+            } else
             {
-                Value = "test"
-            };
+                throw new RpcException(new Status(StatusCode.NotFound, $"Object <{request.Key.PartitionId}, {request.Key.ObjectId}> not found here"));
+            }
+
+
+            
         }
 
         // Write Object
@@ -48,9 +62,10 @@ namespace Server
             Console.WriteLine($"Object_id: {request.Key.ObjectId}");
             Console.WriteLine($"Value: {request.Value}");
 
+
             return new WriteObjectReply
             {
-                Ok = false
+                Ok = true
             };
         }
 
