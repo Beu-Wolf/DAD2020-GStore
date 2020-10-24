@@ -14,9 +14,14 @@ namespace Server
         // Dict with all values
         private readonly Dictionary<ObjectKey, string> KeyValuePairs;
 
-        public ServerSyncService(Dictionary<ObjectKey, string> keyValuePairs)
+        private readonly Dictionary<long, List<string>> ServersByPartition;
+        private readonly List<long> MasteredPartitions;
+
+        public ServerSyncService(Dictionary<ObjectKey, string> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions)
         {
             KeyValuePairs = keyValuePairs;
+            ServersByPartition = serversByPartitions;
+            MasteredPartitions = masteredPartitions;
         }
 
 
@@ -42,7 +47,7 @@ namespace Server
 
         public ReleaseObjectLockReply ReleaseObject(ReleaseObjectLockRequest request)
         {
-            Console.WriteLine("Received LockObjectRequest with params:");
+            Console.WriteLine("Received ReleaseObjectLockRequest with params:");
             Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
             Console.WriteLine("Value: " + request.Value);
 

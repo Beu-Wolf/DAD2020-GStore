@@ -18,6 +18,8 @@ namespace Server
             Object_id = object_id;
         }
 
+        public ObjectKey(Key key) : this (key.PartitionId, key.ObjectId) { }
+
         public class ObjectKeyComparer : IEqualityComparer<ObjectKey>
         {
             public bool Equals(ObjectKey objectKey1, ObjectKey objectKey2)
@@ -50,6 +52,9 @@ namespace Server
                 return;
             }
 
+            AppContext.SetSwitch(
+   "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+
             string host = args[0]; // Maybe pass as parameter when instanciating server
 
             // Dictionary with values
@@ -63,13 +68,19 @@ namespace Server
             };
 
             // List partition which im master of
-            List<long> MasterPartitions = new List<long> { Port == 10001 ? 1 : 0 };
+            List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 0 };
+
+            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions)
+            {
+                MyHost = host,
+                MyPort = Port
+            };
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {
                 Services = { 
-                    ClientServerGrpcService.BindService(new ClientServerService(keyValuePairs)), 
-                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs))
+                    ClientServerGrpcService.BindService(clientServerService), 
+                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs, ServersByPartition, MasteredPartitions))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };
