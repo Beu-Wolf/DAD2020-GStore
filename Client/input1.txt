@@ -1,4 +1,6 @@
-begin-repeat 3
+begin-repeat 2
 write $i $i "value-$i"
 read $i $i $i
 end-repeat
+listServer 1
+listGlobal

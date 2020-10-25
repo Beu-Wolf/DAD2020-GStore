@@ -128,17 +128,18 @@ namespace Server
 
             List<ObjectInfo> lst = new List<ObjectInfo>();
 
-            for(int i = 0; i < 3; i++)
+            foreach (ObjectKey obj in KeyValuePairs.Keys)
             {
                 lst.Add(new ObjectInfo
                 {
-                    IsPartitionMaster = false,
-                    Value = i.ToString(),
+                    IsPartitionMaster = MasteredPartitions.Contains(obj.GetPartitionId()),
                     Key = new Key
                     {
-                        PartitionId = i,
-                        ObjectId = i*10
-                    }
+                        PartitionId = obj.GetPartitionId(),
+                        ObjectId = obj.GetObjectId()
+                    },
+                    Value = KeyValuePairs[obj]
+
                 });
             }
 
@@ -157,19 +158,16 @@ namespace Server
         public ListGlobalReply ListMeGlobal(ListGlobalRequest request)
         {
             Console.WriteLine("Received ListGlobal");
-            List<Key> lst = new List<Key>
+            List<Key> lst = new List<Key>();
+
+            foreach (var key in KeyValuePairs.Keys)
             {
-                new Key
+                lst.Add(new Key
                 {
-                    ObjectId = 1,
-                    PartitionId = 2
-                },
-                new Key
-                {
-                    ObjectId = 2,
-                    PartitionId = 2
-                }
-            };
+                    PartitionId = key.GetPartitionId(),
+                    ObjectId = key.GetObjectId()
+                });
+            }
 
             return new ListGlobalReply
             {

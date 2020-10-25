@@ -3,6 +3,8 @@ using System.Threading;
 using System.Collections.Generic;
 using Grpc.Net.Client;
 using Grpc.Core;
+using System.Linq;
+using System.Collections.Concurrent;
 
 namespace Client
 {
@@ -15,18 +17,38 @@ namespace Client
         private GrpcChannel Channel { get; set; }
         private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
 
-        public GSTOREClient(GrpcChannel grpcChannel)
+        private readonly Dictionary<long, List<int>> ServersIdByPartition;
+        private readonly Dictionary<int, string> ServerUrls;
+        private int currentServerId;
+
+
+
+        public GSTOREClient(Dictionary<long, List<int>> serversIdByPartition, Dictionary<int, string> serverUrls)
         {
-            Channel = grpcChannel;
-            Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(grpcChannel);
+            ServersIdByPartition = serversIdByPartition;
+            ServerUrls = serverUrls;
+
+            // Connect to random server
+            Random rnd = new Random();
+            var keyValPair = serverUrls.ElementAt(rnd.Next(serverUrls.Count));
+            Console.WriteLine($"Connecting to id {keyValPair.Key} at {keyValPair.Value}");
+            currentServerId = keyValPair.Key;
+            Channel = GrpcChannel.ForAddress(keyValPair.Value);
+            Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
         }
 
-        public bool TryChangeCommunicationChannel(GrpcChannel newChannel)
+        public string AttachedServer()
+        {
+            return Channel?.Target;
+        }
+
+        public bool TryChangeCommunicationChannel(int server_id)
         {
             try
             {
-                Channel = Channel;
-                Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(newChannel);
+                currentServerId = server_id;
+                Channel = GrpcChannel.ForAddress(ServerUrls[server_id]);
+                Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
                 return true;
             } catch(Exception)
             {
@@ -37,6 +59,21 @@ namespace Client
 
         public void ReadObject(int partition_id, int object_id, int server_id)
         {
+            // Check if connected Server has requested partition
+
+            if (!ServersIdByPartition[partition_id].Contains(currentServerId))
+            {
+                if (server_id == -1)
+                {
+                    // Not connected to correct partition, and no optional server stated, return "N/A"
+                    Console.WriteLine("N/A");
+                    return;
+                } else
+                {
+                    TryChangeCommunicationChannel(server_id);
+                }
+            }
+
             ReadObjectRequest request = new ReadObjectRequest
             {
                 Key = new Key
@@ -53,38 +90,91 @@ namespace Client
             {
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
                 Console.WriteLine($"Error message: {e.Status.Detail}");
+                Console.WriteLine("N/A");
             }
         }
 
         public void WriteObject(int partition_id, int object_id, string value)
         {
-            WriteObjectRequest request = new WriteObjectRequest
+
+            int currentServerParitionIndex;
+            List<int> ServersOfPartition = ServersIdByPartition[partition_id];
+
+            // Check if connected to server with desired partition
+            if (!ServersOfPartition.Contains(currentServerId))
             {
-                Key = new Key
+                // If not connect to first server of partition
+                TryChangeCommunicationChannel(ServersOfPartition[0]);
+                currentServerParitionIndex = 0;
+            } else
+            {
+                currentServerParitionIndex = ServersOfPartition.IndexOf(currentServerId); 
+            }
+
+            var success = false;
+            int numTries = 0;
+            while (!success && numTries <= ServersOfPartition.Count)
+            {
+                try
                 {
-                    PartitionId = partition_id,
-                    ObjectId = object_id
-                },
-                Value = value
-            };
-            var reply = Client.WriteObject(request);
-            Console.WriteLine("Received: " + reply.Ok);
+                    WriteObjectRequest request = new WriteObjectRequest
+                    {
+                        Key = new Key
+                        {
+                            PartitionId = partition_id,
+                            ObjectId = object_id
+                        },
+                        Value = value
+                    };
+                    var reply = Client.WriteObject(request);
+                    Console.WriteLine("Received: " + reply.Ok);
+                    success = true;
+                } catch (RpcException e)
+                {
+                    if (e.Status.StatusCode != StatusCode.PermissionDenied)
+                    {
+                        throw e;
+                    }
+                    // Connect to next server in list
+                    currentServerParitionIndex = (currentServerParitionIndex+1) % ServersOfPartition.Count;
+                    TryChangeCommunicationChannel(ServersOfPartition[currentServerParitionIndex]);
+                    Console.WriteLine("Now connecting to server " + ServersOfPartition[currentServerParitionIndex] + " at " + ServerUrls[currentServerId]);
+                    numTries++;
+                }
+            }
+
+            
         }
 
         public void ListServer(int server_id)
         {
-            //if (Channel.Target != Dict.UrlOf(server_id))
-            // New connection to correct URL
+            if (currentServerId != server_id)
+            {
+                TryChangeCommunicationChannel(server_id);
+            }
             ListServerRequest request = new ListServerRequest();
             var reply = Client.ListServer(request);
-            Console.WriteLine("Received: "  + reply.ToString());
+            Console.WriteLine("Received from server: " + server_id);
+            foreach (var obj in reply.Objects)
+            {
+                Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+            }
         }
 
         public void ListGlobal()
         {
-            ListGlobalRequest request = new ListGlobalRequest();
-            var reply = Client.ListGlobal(request);
-            Console.WriteLine("Received: " + reply.ToString());
+            foreach (var serverId in ServerUrls.Keys)
+            {
+                TryChangeCommunicationChannel(serverId);
+
+                ListGlobalRequest request = new ListGlobalRequest();
+                var reply = Client.ListGlobal(request);
+                Console.WriteLine("Received from " + serverId);
+                foreach (var key in reply.Keys)
+                {
+                    Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+                }
+            }
         }
 
     }
@@ -94,8 +184,6 @@ namespace Client
     
         static void Main(string[] args) {
 
-            int Port = 10001; // TODO: Change
-
             AppContext.SetSwitch(
     "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
@@ -104,8 +192,19 @@ namespace Client
                 return;
             }
 
-            var channel = GrpcChannel.ForAddress($"http://localhost:{Port}");
-            var client = new GSTOREClient(channel);
+            var serverIdsByPartition = new Dictionary<long, List<int>>
+            {
+                {1, new List<int> {1, 2} },
+                {2, new List<int> {2} }
+            };
+
+            var serverUrls = new Dictionary<int, string>
+            {
+                {1, "http://localhost:10001" },
+                {2, "http://localhost:10002" }
+            };
+
+            var client = new GSTOREClient(serverIdsByPartition, serverUrls);
 
             try {
                     string line;
@@ -257,8 +356,8 @@ namespace Client
                 return;
             }
 
-            // Console.WriteLine($"listGlobal");
             Console.WriteLine("listGlobal");
+            client.ListGlobal();
         }
         static void Handle_wait(string[] cmd, GSTOREClient client) {
             if (cmd.Length != 2) {

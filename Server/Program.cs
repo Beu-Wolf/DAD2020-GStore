@@ -8,7 +8,7 @@ namespace Server
 
     public class ObjectKey
     {
-        private readonly long Partition_id;
+        private long Partition_id;
 
         private readonly long Object_id;
 
@@ -31,6 +31,16 @@ namespace Server
             {
                 return objectKey.Object_id.GetHashCode() ^ objectKey.Partition_id.GetHashCode();
             }
+        }
+
+        public long GetPartitionId()
+        {
+            return Partition_id;
+        }
+
+        public long GetObjectId()
+        {
+            return Object_id;
         }
     }
 
@@ -64,11 +74,12 @@ namespace Server
             // Dictionary <partition_id, List<URLs>> all servers by partition
             Dictionary<long, List<string>> ServersByPartition = new Dictionary<long, List<string>>
             {
-                {1, new List<string> {"http://localhost:10001", "http://localhost:10002"} }
+                {1, new List<string> {"http://localhost:10001", "http://localhost:10002"} },
+                {2, new List<string> {"http://localhost:10002"} }
             };
 
             // List partition which im master of
-            List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 0 };
+            List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 2 };
 
             var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions)
             {
