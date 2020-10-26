@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Threading;
 using Grpc.Core;
 using Grpc.Net.Client;
 
@@ -44,6 +45,74 @@ namespace Server
         }
     }
 
+    public class ObjectValueManager
+    {
+        public string Value;
+        private object WriteLock = new object();
+        private bool Writing = false;
+        private object NumReadersLock = new object();
+        private int NumReaders = 0;
+
+        public ObjectValueManager(string value)
+        {
+            Value = value;
+        }
+
+        public ObjectValueManager() { }
+
+        public void LockRead()
+        {
+            lock (WriteLock)
+            {
+                if (Writing) Monitor.Wait(WriteLock);
+                else
+                {
+                    lock(NumReadersLock)
+                    {
+                        NumReaders++;
+                    }
+                }
+            }
+        }
+
+        public void UnlockRead()
+        {
+            lock(NumReadersLock)
+            {
+                NumReaders--;
+                if (NumReaders == 0) Monitor.Pulse(NumReadersLock);
+            }
+        }
+
+        public void LockWrite()
+        {
+            lock(WriteLock)
+            {
+                if (Writing) Monitor.Wait(WriteLock);
+                else
+                {
+                    lock(NumReadersLock)
+                    {
+                        if (NumReaders != 0) Monitor.Wait(NumReadersLock);
+                        else Writing = true;
+                    }
+                }
+            }
+        }
+
+        public void UnlockWrite(string value)
+        {
+            lock(WriteLock)
+            {
+                Value = value;
+                Writing = false;
+                Monitor.Pulse(WriteLock);
+            }
+        }
+
+        
+    }
+
     public class Program
     {
 
@@ -68,7 +137,7 @@ namespace Server
             string host = args[0]; // Maybe pass as parameter when instanciating server
 
             // Dictionary with values
-            Dictionary<ObjectKey, string> keyValuePairs = new Dictionary<ObjectKey, string>(new ObjectKey.ObjectKeyComparer());
+            Dictionary<ObjectKey, ObjectValueManager> keyValuePairs = new Dictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
 
 
             // Dictionary <partition_id, List<URLs>> all servers by partition

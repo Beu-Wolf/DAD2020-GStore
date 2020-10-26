@@ -15,9 +15,9 @@ namespace Server
         public int MyPort { get; set; }
         public string MyHost { get; set; }
 
+        private object WriteGlobalLock = new object();
 
-
-        private readonly Dictionary<ObjectKey, string> KeyValuePairs;
+        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
         private readonly Dictionary<long, List<string>> ServersByPartition;
         private readonly List<long> MasteredPartitions;
 
@@ -25,7 +25,7 @@ namespace Server
 
         public ClientServerService() {}
 
-        public ClientServerService(Dictionary<ObjectKey, string> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions)
+        public ClientServerService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
@@ -45,12 +45,18 @@ namespace Server
             Console.WriteLine($"Object_id: {request.Key.ObjectId}");
 
             var requestedObject = new ObjectKey(request.Key);
-            
-            if (KeyValuePairs.TryGetValue(requestedObject, out string value)) {
-                return new ReadObjectReply
+
+
+            if (KeyValuePairs.TryGetValue(requestedObject, out ObjectValueManager objectValueManager)) {
+
+                objectValueManager.LockRead();
+                ReadObjectReply reply = new ReadObjectReply
                 {
-                    Value = value
+                    Value = objectValueManager.Value
                 };
+                objectValueManager.UnlockRead();
+                return reply;
+                
             } else
             {
                 throw new RpcException(new Status(StatusCode.NotFound, $"Object <{request.Key.PartitionId}, {request.Key.ObjectId}> not found here"));
@@ -70,50 +76,62 @@ namespace Server
             Console.WriteLine($"Object_id: {request.Key.ObjectId}");
             Console.WriteLine($"Value: {request.Value}");
 
-            if(MasteredPartitions.Contains(request.Key.PartitionId))
+            if (MasteredPartitions.Contains(request.Key.PartitionId))
             {
-                // I'm master of this object's partition
-                // Send request to all other servers of partition
-                ServersByPartition.TryGetValue(request.Key.PartitionId, out List<string> serverUrls);
-                foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                lock(WriteGlobalLock)
                 {
-                    var channel = GrpcChannel.ForAddress(serverUrl);
-                    var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-                    // What to do if success returns false ?
-                    client.LockObject(new LockObjectRequest
+                    // I'm master of this object's partition
+                    // Send request to all other servers of partition
+                    ServersByPartition.TryGetValue(request.Key.PartitionId, out List<string> serverUrls);
+
+                    if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
                     {
-                        Key = request.Key
-                    });
-                }
+                        objectValueManager = new ObjectValueManager();
+                        KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
+                    }
 
-                KeyValuePairs[new ObjectKey(request.Key)] = request.Value;
+                    objectValueManager.LockWrite();
 
-                foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
-                {
-                    var channel = GrpcChannel.ForAddress(serverUrl);
-                    var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-                    // What to do if success returns false ?
-                    client.ReleaseObjectLock(new ReleaseObjectLockRequest
+                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                     {
-                        Key = request.Key,
-                        Value = request.Value
-                    
-                    });
-                }
+                        var channel = GrpcChannel.ForAddress(serverUrl);
+                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                        // What to do if success returns false ?
+                        client.LockObject(new LockObjectRequest
+                        {
+                            Key = request.Key
+                        });
+                    }
 
-                return new WriteObjectReply
-                {
-                    Ok = true
-                };
-            } else
+
+                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                    {
+                        var channel = GrpcChannel.ForAddress(serverUrl);
+                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                        // What to do if success returns false ?
+                        client.ReleaseObjectLock(new ReleaseObjectLockRequest
+                        {
+                            Key = request.Key,
+                            Value = request.Value
+
+                        });
+                    }
+
+                    objectValueManager.UnlockWrite(request.Value);
+
+
+                    return new WriteObjectReply
+                    {
+                        Ok = true
+                    };
+                }
+            }
+            else
             {
                 // Tell him I'm not the master
                 throw new RpcException(new Status(StatusCode.PermissionDenied, $"Server {MyHost}:{MyPort} is not the master of partition {request.Key.PartitionId}"));
             }
-
-
-
-            
+                      
         }
 
         // List Server
@@ -138,7 +156,7 @@ namespace Server
                         PartitionId = obj.GetPartitionId(),
                         ObjectId = obj.GetObjectId()
                     },
-                    Value = KeyValuePairs[obj]
+                    Value = KeyValuePairs[obj].Value
 
                 });
             }
