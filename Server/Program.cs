@@ -55,6 +55,7 @@ namespace Server
             lock (WriteLock)
             {
                 while (Writing) Monitor.Wait(WriteLock);
+
                 lock(NumReadersLock)
                 {
                     NumReaders++;
@@ -77,7 +78,6 @@ namespace Server
             lock(WriteLock)
             {
                 while (Writing) Monitor.Wait(WriteLock);
-                
                 
                 lock(NumReadersLock)
                 {

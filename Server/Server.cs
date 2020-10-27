@@ -94,7 +94,8 @@ namespace Server
                         KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
                         objectValueManager.LockWrite();
                         LocalReadWriteLock.ReleaseWriterLock();
-                    } else
+                    }
+                    else
                     {
                         objectValueManager.LockWrite();
                     }
@@ -154,9 +155,9 @@ namespace Server
 
             List<ObjectInfo> lst = new List<ObjectInfo>();
 
+            LocalReadWriteLock.AcquireReaderLock(-1);
             foreach (ObjectKey obj in KeyValuePairs.Keys)
             {
-                LocalReadWriteLock.AcquireReaderLock(-1);
                 KeyValuePairs[obj].LockRead();
                 lst.Add(new ObjectInfo
                 {
@@ -170,8 +171,8 @@ namespace Server
 
                 });
                 KeyValuePairs[obj].UnlockRead();
-                LocalReadWriteLock.ReleaseReaderLock();
             }
+            LocalReadWriteLock.ReleaseReaderLock();
 
             return new ListServerReply
             {
@@ -190,9 +191,9 @@ namespace Server
             Console.WriteLine("Received ListGlobal");
             List<Key> lst = new List<Key>();
 
+            LocalReadWriteLock.AcquireReaderLock(-1);
             foreach (var key in KeyValuePairs.Keys)
             {
-                LocalReadWriteLock.AcquireReaderLock(-1);
                 KeyValuePairs[key].LockRead();
                 lst.Add(new Key
                 {
@@ -200,8 +201,8 @@ namespace Server
                     ObjectId = key.Object_id
                 });
                 KeyValuePairs[key].UnlockRead();
-                LocalReadWriteLock.ReleaseReaderLock();
             }
+            LocalReadWriteLock.ReleaseReaderLock();
 
             return new ListGlobalReply
             {

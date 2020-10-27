@@ -41,7 +41,8 @@ namespace Server
                 KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
                 objectValueManager.LockWrite();
                 LocalReadWriteLock.ReleaseWriterLock();
-            } else
+            }
+            else
             {
                 objectValueManager.LockWrite();
             }
