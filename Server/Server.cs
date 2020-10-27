@@ -15,21 +15,22 @@ namespace Server
         public int MyPort { get; set; }
         public string MyHost { get; set; }
 
-        private object WriteGlobalLock = new object();
+        private readonly object WriteGlobalLock = new object();
+
+        private readonly ReaderWriterLock LocalReadWriteLock;
 
         private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
         private readonly Dictionary<long, List<string>> ServersByPartition;
         private readonly List<long> MasteredPartitions;
 
-        private object myLock = new object();
-
         public ClientServerService() {}
 
-        public ClientServerService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions)
+        public ClientServerService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions, ReaderWriterLock readerWriterLock)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
             MasteredPartitions = masteredPartitions;
+            LocalReadWriteLock = readerWriterLock;
         }
 
         // Read Object
@@ -49,12 +50,14 @@ namespace Server
 
             if (KeyValuePairs.TryGetValue(requestedObject, out ObjectValueManager objectValueManager)) {
 
+                LocalReadWriteLock.AcquireReaderLock(-1);
                 objectValueManager.LockRead();
                 ReadObjectReply reply = new ReadObjectReply
                 {
                     Value = objectValueManager.Value
                 };
                 objectValueManager.UnlockRead();
+                LocalReadWriteLock.ReleaseReaderLock();
                 return reply;
                 
             } else
@@ -86,11 +89,16 @@ namespace Server
 
                     if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
                     {
+                        LocalReadWriteLock.AcquireWriterLock(-1);
                         objectValueManager = new ObjectValueManager();
                         KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
+                        objectValueManager.LockWrite();
+                        LocalReadWriteLock.ReleaseWriterLock();
+                    } else
+                    {
+                        objectValueManager.LockWrite();
                     }
 
-                    objectValueManager.LockWrite();
 
                     foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                     {
@@ -148,17 +156,21 @@ namespace Server
 
             foreach (ObjectKey obj in KeyValuePairs.Keys)
             {
+                LocalReadWriteLock.AcquireReaderLock(-1);
+                KeyValuePairs[obj].LockRead();
                 lst.Add(new ObjectInfo
                 {
-                    IsPartitionMaster = MasteredPartitions.Contains(obj.GetPartitionId()),
+                    IsPartitionMaster = MasteredPartitions.Contains(obj.Partition_id),
                     Key = new Key
                     {
-                        PartitionId = obj.GetPartitionId(),
-                        ObjectId = obj.GetObjectId()
+                        PartitionId = obj.Partition_id,
+                        ObjectId = obj.Object_id
                     },
                     Value = KeyValuePairs[obj].Value
 
                 });
+                KeyValuePairs[obj].UnlockRead();
+                LocalReadWriteLock.ReleaseReaderLock();
             }
 
             return new ListServerReply
@@ -180,11 +192,15 @@ namespace Server
 
             foreach (var key in KeyValuePairs.Keys)
             {
+                LocalReadWriteLock.AcquireReaderLock(-1);
+                KeyValuePairs[key].LockRead();
                 lst.Add(new Key
                 {
-                    PartitionId = key.GetPartitionId(),
-                    ObjectId = key.GetObjectId()
+                    PartitionId = key.Partition_id,
+                    ObjectId = key.Object_id
                 });
+                KeyValuePairs[key].UnlockRead();
+                LocalReadWriteLock.ReleaseReaderLock();
             }
 
             return new ListGlobalReply

@@ -37,11 +37,6 @@ namespace Client
             Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
         }
 
-        public string AttachedServer()
-        {
-            return Channel?.Target;
-        }
-
         public bool TryChangeCommunicationChannel(int server_id)
         {
             try
@@ -65,9 +60,10 @@ namespace Client
             {
                 if (server_id == -1)
                 {
-                    // Not connected to correct partition, and no optional server stated, return "N/A"
-                    Console.WriteLine("N/A");
-                    return;
+                    // Not connected to correct partition, and no optional server stated, connect to random server from partition
+                    Random rnd = new Random();
+                    var randomServerFromPartition = ServersIdByPartition[partition_id][rnd.Next(ServersIdByPartition[partition_id].Count)];
+                    TryChangeCommunicationChannel(randomServerFromPartition);
                 } else
                 {
                     TryChangeCommunicationChannel(server_id);
@@ -97,7 +93,7 @@ namespace Client
         public void WriteObject(int partition_id, int object_id, string value)
         {
 
-            int currentServerParitionIndex;
+            int currentServerPartitionIndex;
             List<int> ServersOfPartition = ServersIdByPartition[partition_id];
 
             // Check if connected to server with desired partition
@@ -105,27 +101,27 @@ namespace Client
             {
                 // If not connect to first server of partition
                 TryChangeCommunicationChannel(ServersOfPartition[0]);
-                currentServerParitionIndex = 0;
+                currentServerPartitionIndex = 0;
             } else
             {
-                currentServerParitionIndex = ServersOfPartition.IndexOf(currentServerId); 
+                currentServerPartitionIndex = ServersOfPartition.IndexOf(currentServerId); 
             }
 
             var success = false;
             int numTries = 0;
-            while (!success && numTries <= ServersOfPartition.Count)
+            WriteObjectRequest request = new WriteObjectRequest
+            {
+                Key = new Key
+                {
+                    PartitionId = partition_id,
+                    ObjectId = object_id
+                },
+                Value = value
+            };
+            while (!success && numTries < ServersOfPartition.Count)
             {
                 try
                 {
-                    WriteObjectRequest request = new WriteObjectRequest
-                    {
-                        Key = new Key
-                        {
-                            PartitionId = partition_id,
-                            ObjectId = object_id
-                        },
-                        Value = value
-                    };
                     var reply = Client.WriteObject(request);
                     Console.WriteLine("Received: " + reply.Ok);
                     success = true;
@@ -136,9 +132,9 @@ namespace Client
                         throw e;
                     }
                     // Connect to next server in list
-                    currentServerParitionIndex = (currentServerParitionIndex+1) % ServersOfPartition.Count;
-                    TryChangeCommunicationChannel(ServersOfPartition[currentServerParitionIndex]);
-                    Console.WriteLine("Now connecting to server " + ServersOfPartition[currentServerParitionIndex] + " at " + ServerUrls[currentServerId]);
+                    currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
+                    TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
+                    Console.WriteLine("Now connecting to server " + ServersOfPartition[currentServerPartitionIndex] + " at " + ServerUrls[currentServerId]);
                     numTries++;
                 }
             }

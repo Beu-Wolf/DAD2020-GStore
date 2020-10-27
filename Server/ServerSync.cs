@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Core.Utils;
 using System.Linq;
+using System.Threading;
 
 namespace Server
 {
@@ -14,14 +15,12 @@ namespace Server
         // Dict with all values
         private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
 
-        private readonly Dictionary<long, List<string>> ServersByPartition;
-        private readonly List<long> MasteredPartitions;
+        private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions)
+        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock)
         {
             KeyValuePairs = keyValuePairs;
-            ServersByPartition = serversByPartitions;
-            MasteredPartitions = masteredPartitions;
+            LocalReadWriteLock = readerWriterLock;
         }
 
 
@@ -37,11 +36,16 @@ namespace Server
 
             if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
             {
+                LocalReadWriteLock.AcquireWriterLock(-1);
                 objectValueManager = new ObjectValueManager();
                 KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
+                objectValueManager.LockWrite();
+                LocalReadWriteLock.ReleaseWriterLock();
+            } else
+            {
+                objectValueManager.LockWrite();
             }
 
-            objectValueManager.LockWrite();
 
             return new LockObjectReply
             {

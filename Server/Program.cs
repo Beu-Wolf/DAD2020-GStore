@@ -9,9 +9,9 @@ namespace Server
 
     public class ObjectKey
     {
-        private long Partition_id;
+        public long Partition_id { get; private set; }
 
-        private readonly long Object_id;
+        public long Object_id { get; private set; }
 
         public ObjectKey(long partition_id, long object_id)
         {
@@ -32,16 +32,6 @@ namespace Server
             {
                 return objectKey.Object_id.GetHashCode() ^ objectKey.Partition_id.GetHashCode();
             }
-        }
-
-        public long GetPartitionId()
-        {
-            return Partition_id;
-        }
-
-        public long GetObjectId()
-        {
-            return Object_id;
         }
     }
 
@@ -64,14 +54,12 @@ namespace Server
         {
             lock (WriteLock)
             {
-                if (Writing) Monitor.Wait(WriteLock);
-                else
+                while (Writing) Monitor.Wait(WriteLock);
+                lock(NumReadersLock)
                 {
-                    lock(NumReadersLock)
-                    {
-                        NumReaders++;
-                    }
+                    NumReaders++;
                 }
+                
             }
         }
 
@@ -80,7 +68,7 @@ namespace Server
             lock(NumReadersLock)
             {
                 NumReaders--;
-                if (NumReaders == 0) Monitor.Pulse(NumReadersLock);
+                if (NumReaders == 0) Monitor.PulseAll(NumReadersLock);
             }
         }
 
@@ -88,15 +76,15 @@ namespace Server
         {
             lock(WriteLock)
             {
-                if (Writing) Monitor.Wait(WriteLock);
-                else
+                while (Writing) Monitor.Wait(WriteLock);
+                
+                
+                lock(NumReadersLock)
                 {
-                    lock(NumReadersLock)
-                    {
-                        if (NumReaders != 0) Monitor.Wait(NumReadersLock);
-                        else Writing = true;
-                    }
+                    while (NumReaders != 0) Monitor.Wait(NumReadersLock);
+                    Writing = true;
                 }
+                
             }
         }
 
@@ -106,7 +94,7 @@ namespace Server
             {
                 Value = value;
                 Writing = false;
-                Monitor.Pulse(WriteLock);
+                Monitor.PulseAll(WriteLock);
             }
         }
 
@@ -150,7 +138,10 @@ namespace Server
             // List partition which im master of
             List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 2 };
 
-            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions)
+            // ReadWriteLock for listMe functions
+            var localReadWriteLock = new ReaderWriterLock();
+
+            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions, localReadWriteLock)
             {
                 MyHost = host,
                 MyPort = Port
@@ -160,7 +151,7 @@ namespace Server
             {
                 Services = { 
                     ClientServerGrpcService.BindService(clientServerService), 
-                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs, ServersByPartition, MasteredPartitions))
+                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs, localReadWriteLock))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };
