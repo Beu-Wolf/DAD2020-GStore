@@ -4,6 +4,8 @@ using System.Text;
 using System.Threading.Tasks;
 using Grpc.Core;
 using Grpc.Core.Utils;
+using System.Linq;
+using System.Threading;
 
 namespace Server
 {
@@ -11,6 +13,16 @@ namespace Server
     public class ServerSyncService : ServerSyncGrpcService.ServerSyncGrpcServiceBase
     {
         // Dict with all values
+        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+
+        private readonly ReaderWriterLock LocalReadWriteLock;
+
+        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock)
+        {
+            KeyValuePairs = keyValuePairs;
+            LocalReadWriteLock = readerWriterLock;
+        }
+
 
         public override Task<LockObjectReply> LockObject(LockObjectRequest request, ServerCallContext context)
         {
@@ -21,9 +33,24 @@ namespace Server
         {
             Console.WriteLine("Received LockObjectRequest with params:");
             Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
+
+            if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
+            {
+                LocalReadWriteLock.AcquireWriterLock(-1);
+                objectValueManager = new ObjectValueManager();
+                KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
+                objectValueManager.LockWrite();
+                LocalReadWriteLock.ReleaseWriterLock();
+            }
+            else
+            {
+                objectValueManager.LockWrite();
+            }
+
+
             return new LockObjectReply
             {
-                Success = false
+                Success = true
             };
         }
 
@@ -34,13 +61,17 @@ namespace Server
 
         public ReleaseObjectLockReply ReleaseObject(ReleaseObjectLockRequest request)
         {
-            Console.WriteLine("Received LockObjectRequest with params:");
+            Console.WriteLine("Received ReleaseObjectLockRequest with params:");
             Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
             Console.WriteLine("Value: " + request.Value);
 
+            var objectValueManager = KeyValuePairs[new ObjectKey(request.Key)];
+
+            objectValueManager.UnlockWrite(request.Value);
+
             return new ReleaseObjectLockReply
             {
-                Success = false
+                Success = true
             };
         }
 
