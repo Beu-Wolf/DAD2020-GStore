@@ -1,0 +1,40 @@
+syntax="proto3";
+
+service PuppetMasterServerGrpcService {
+	rpc Status (StatusRequest) returns (StatusReply);
+	rpc Crash (CrashRequest) returns (CrashReply);
+	rpc Freeze (FreezeRequest) returns (FreezeReply);
+	rpc Unfreeze (UnfreezeRequest) returns (UnfreezeReply);
+}
+
+message StatusRequest {
+
+}
+
+message StatusReply {
+	bool success = 1;
+}
+
+message CrashRequest {
+
+}
+
+message CrashReply {
+	bool success = 1;
+}
+
+message FreezeRequest {
+
+}
+
+message FreezeReply {
+	bool success = 1;
+}
+
+message UnfreezeRequest {
+
+}
+
+message UnfreezeReply {
+	bool success = 1;
+}
