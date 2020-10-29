@@ -47,10 +47,7 @@ namespace Server
 
         public FreezeReply FreezeServer()
         {
-            lock(FreezeLock)
-            {
-                Interceptor.FreezeCommands = true;
-            }
+            Interceptor.FreezeCommands = true;
             return new FreezeReply
             {
                 Success = true
@@ -64,12 +61,7 @@ namespace Server
 
         public UnfreezeReply UnfreezeServer()
         {
-            lock(FreezeLock)
-            {
-                Interceptor.FreezeCommands = false;
-                Monitor.PulseAll(FreezeLock);
-            }
-
+            Interceptor.FreezeCommands = false;
             return new UnfreezeReply
             {
                 Success = true

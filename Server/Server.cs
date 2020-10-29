@@ -189,7 +189,6 @@ namespace Server
                                 
                             });
                         }
-                        connectionCrashedServers.Clear();
                     }
 
                     objectValueManager.UnlockWrite(request.Value);

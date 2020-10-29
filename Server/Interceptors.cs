@@ -2,6 +2,7 @@
 using Grpc.Core.Interceptors;
 using System;
 using System.Collections.Generic;
+using System.Reflection.Metadata.Ecma335;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,7 +15,17 @@ namespace Server
         private readonly int MaxDelay;
 
         private readonly object FreezeLock;
-        public Boolean FreezeCommands { get; set; }
+        private Boolean freezeCommands;
+
+        public Boolean FreezeCommands { get => freezeCommands;  
+            set {
+                lock (FreezeLock)
+                {
+                    freezeCommands = value;
+                    if (!value) Monitor.PulseAll(FreezeLock);
+                }
+            }  
+        }
 
         private readonly Random Rnd = new Random();
 
