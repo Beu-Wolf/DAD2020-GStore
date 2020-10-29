@@ -15,12 +15,17 @@ namespace Server
         // Dict with all values
         private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
 
+
+        private readonly Dictionary<long, List<string>> ServersByPartition;
+        private readonly HashSet<string> CrashedServers;
+
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock)
+        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock, HashSet<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             LocalReadWriteLock = readerWriterLock;
+            CrashedServers = crashedServers;
         }
 
 
@@ -70,6 +75,21 @@ namespace Server
             objectValueManager.UnlockWrite(request.Value);
 
             return new ReleaseObjectLockReply
+            {
+                Success = true
+            };
+        }
+
+        public override Task<RemoveCrashedServersReply> RemoveCrashedServers(RemoveCrashedServersRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(RemoveCrashed(request));
+        }
+
+        public RemoveCrashedServersReply RemoveCrashed(RemoveCrashedServersRequest request)
+        {
+            CrashedServers.UnionWith(request.ServerUrls);
+            ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerUrls.Contains(x));
+            return new RemoveCrashedServersReply
             {
                 Success = true
             };

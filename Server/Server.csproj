@@ -15,6 +15,7 @@
     </PackageReference>
 	<Protobuf Include="..\Protos\ClientServer.proto" GrpcServices="Server" Link="protos\ClientServer.proto" />
 	<Protobuf Include="..\Protos\ServerSync.proto" GrpcServices="Both" Link="protos\ServerSync.proto" />
+	  <Protobuf Include="..\Protos\PuppetMasterServer.proto" GrpcServices="Server" Link="protos\PuppetMasterServer.proto" />
   </ItemGroup>
 
 </Project>
