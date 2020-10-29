@@ -19,14 +19,16 @@ namespace Client
 
         private readonly Dictionary<long, List<int>> ServersIdByPartition;
         private readonly Dictionary<int, string> ServerUrls;
+        private readonly HashSet<int> CrashedServers;
         private int currentServerId;
 
 
 
-        public GSTOREClient(Dictionary<long, List<int>> serversIdByPartition, Dictionary<int, string> serverUrls)
+        public GSTOREClient(Dictionary<long, List<int>> serversIdByPartition, Dictionary<int, string> serverUrls, HashSet<int> crashedServers)
         {
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
+            CrashedServers = crashedServers;
 
             // Connect to random server
             Random rnd = new Random();
@@ -84,6 +86,19 @@ namespace Client
                 Console.WriteLine("Received: " + reply.Value);
             } catch (RpcException e)
             {
+                // If error is because Server failed, update list of crashed Servers
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                {
+                    CrashedServers.Add(currentServerId);
+                    foreach (var kvPair in ServersIdByPartition)
+                    {
+                        if (kvPair.Value.Contains(currentServerId))
+                        {
+                            kvPair.Value.Remove(currentServerId);
+                        }
+                    }
+                }
+
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
                 Console.WriteLine($"Error message: {e.Status.Detail}");
                 Console.WriteLine("N/A");
@@ -118,6 +133,8 @@ namespace Client
                 },
                 Value = value
             };
+
+            var crashedServers = new HashSet<int>();
             while (!success && numTries < ServersOfPartition.Count)
             {
                 try
@@ -129,7 +146,16 @@ namespace Client
                 {
                     if (e.Status.StatusCode != StatusCode.PermissionDenied)
                     {
-                        throw e;
+                        // If error is because Server failed, keep it
+                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                        {
+                            crashedServers.Add(currentServerId);
+                        }
+                        else
+                        {
+                            throw e;
+                        }
+
                     }
                     // Connect to next server in list
                     currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
@@ -139,7 +165,18 @@ namespace Client
                 }
             }
 
-            
+            // Remove crashed servers from list and update CrashedServers list
+            CrashedServers.UnionWith(crashedServers);
+            foreach (var crashedServer in crashedServers)
+            {
+                foreach (var kvPair in ServersIdByPartition)
+                {                                            
+                    if (kvPair.Value.Contains(crashedServer))
+                    {
+                        kvPair.Value.Remove(crashedServer);
+                    }
+                }
+            }
         }
 
         public void ListServer(int server_id)
@@ -148,13 +185,38 @@ namespace Client
             {
                 TryChangeCommunicationChannel(server_id);
             }
-            ListServerRequest request = new ListServerRequest();
-            var reply = Client.ListServer(request);
-            Console.WriteLine("Received from server: " + server_id);
-            foreach (var obj in reply.Objects)
+
+            try
             {
-                Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                ListServerRequest request = new ListServerRequest();
+                var reply = Client.ListServer(request);
+                Console.WriteLine("Received from server: " + server_id);
+                foreach (var obj in reply.Objects)
+                {
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                }
+            } 
+            catch (RpcException e)
+            {
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                {
+                    // Update Crashed Server List
+                    CrashedServers.Add(currentServerId);
+                    foreach (var kvPair in ServersIdByPartition)
+                    {
+                        if (kvPair.Value.Contains(currentServerId))
+                        {
+                            kvPair.Value.Remove(currentServerId);
+                        }
+                    }
+                    Console.WriteLine($"Server {currentServerId} is down");
+                } else
+                {
+                    throw e;
+                }
             }
+
+            
         }
 
         public void ListGlobal()
@@ -163,12 +225,36 @@ namespace Client
             {
                 TryChangeCommunicationChannel(serverId);
 
-                ListGlobalRequest request = new ListGlobalRequest();
-                var reply = Client.ListGlobal(request);
-                Console.WriteLine("Received from " + serverId);
-                foreach (var key in reply.Keys)
+                try
                 {
-                    Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+
+                    ListGlobalRequest request = new ListGlobalRequest();
+                    var reply = Client.ListGlobal(request);
+                    Console.WriteLine("Received from " + serverId);
+                    foreach (var key in reply.Keys)
+                    {
+                        Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+                    }
+                }
+                catch (RpcException e)
+                {
+                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                    {
+                        // Update Crashed Server List
+                        CrashedServers.Add(currentServerId);
+                        foreach (var kvPair in ServersIdByPartition)
+                        {
+                            if (kvPair.Value.Contains(currentServerId))
+                            {
+                                kvPair.Value.Remove(currentServerId);
+                            }
+                        }
+                        Console.WriteLine($"Server {currentServerId} is down");
+                    }
+                    else
+                    {
+                        throw e;
+                    }
                 }
             }
         }
@@ -180,13 +266,23 @@ namespace Client
     
         static void Main(string[] args) {
 
+            if (args.Length != 3)
+            {
+                Console.WriteLine("Usage: Client.exe host port <script_file>");
+                return;
+            }
+
+
+            if (!int.TryParse(args[1], out int Port))
+            {
+                Console.WriteLine("Invalid port value");
+                return;
+            }
+
             AppContext.SetSwitch(
     "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
-            if (args.Length != 1) {
-                Console.WriteLine("Usage: client.exe <script_file>");
-                return;
-            }
+            string host = args[0];
 
             var serverIdsByPartition = new Dictionary<long, List<int>>
             {
@@ -200,12 +296,26 @@ namespace Client
                 {2, "http://localhost:10002" }
             };
 
-            var client = new GSTOREClient(serverIdsByPartition, serverUrls);
+            var crashedServers = new HashSet<int>();
+
+            var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
+
+            var server = new Grpc.Core.Server
+            {
+                Services =
+                {
+                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, crashedServers))
+                },
+                Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
+
+            };
+
+            server.Start();
 
             try {
                     string line;
 
-                    System.IO.StreamReader file = new System.IO.StreamReader(args[0]);
+                    System.IO.StreamReader file = new System.IO.StreamReader(args[2]);
                     while ((line = file.ReadLine()) != null) {
                         string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
                         CommandDispatcher(cmd, file, client);
@@ -219,11 +329,14 @@ namespace Client
                     Console.ReadKey();
 
 
-                } catch (System.IO.FileNotFoundException) {
-                    Console.WriteLine("File not found. Exiting...");
-                    return;
-                }
+
+            } catch (System.IO.FileNotFoundException) {
+                Console.WriteLine("File not found. Exiting...");
+            } finally
+            {
+                server.ShutdownAsync().Wait();
             }
+        }
 
         static void CommandDispatcher(string[] cmd, System.IO.StreamReader file, GSTOREClient client) {
             switch (cmd[0]) {

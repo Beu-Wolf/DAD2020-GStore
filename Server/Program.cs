@@ -156,7 +156,7 @@ namespace Server
                 MyPort = Port
             };
 
-            var serverSyncService = new ServerSyncService(keyValuePairs, localReadWriteLock, CrashedServers);
+            var serverSyncService = new ServerSyncService(keyValuePairs, ServersByPartition, localReadWriteLock, CrashedServers);
 
             var puppetMasterService = new PuppetMasterServerService(ServersByPartition, MasteredPartitions, CrashedServers, interceptor);
 

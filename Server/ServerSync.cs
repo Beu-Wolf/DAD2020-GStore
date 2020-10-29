@@ -21,11 +21,12 @@ namespace Server
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock, HashSet<string> crashedServers)
+        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, HashSet<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             LocalReadWriteLock = readerWriterLock;
             CrashedServers = crashedServers;
+            ServersByPartition = serversByPartition;
         }
 
 
