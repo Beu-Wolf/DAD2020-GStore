@@ -1,9 +1,6 @@
 ﻿using Grpc.Core;
 using Grpc.Core.Interceptors;
 using System;
-using System.Collections.Generic;
-using System.Reflection.Metadata.Ecma335;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,7 +11,7 @@ namespace Server
         private readonly int MinDelay;
         private readonly int MaxDelay;
 
-        private readonly object FreezeLock;
+        private readonly object FreezeLock = new object();
         private Boolean freezeCommands;
 
         public Boolean FreezeCommands { get => freezeCommands;  
@@ -29,11 +26,10 @@ namespace Server
 
         private readonly Random Rnd = new Random();
 
-        public DelayMessagesInterceptor(int minDelay, int maxDelay, object freezeLock)
+        public DelayMessagesInterceptor(int minDelay, int maxDelay)
         {
             MinDelay = minDelay;
             MaxDelay = maxDelay;
-            FreezeLock = freezeLock;
             FreezeCommands = false;
         }
 

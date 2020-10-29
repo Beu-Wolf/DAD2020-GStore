@@ -1,9 +1,8 @@
-﻿using System;
+﻿using Grpc.Core;
+using Grpc.Core.Interceptors;
+using System;
 using System.Collections.Generic;
 using System.Threading;
-using Grpc.Core;
-using Grpc.Core.Interceptors;
-using Grpc.Net.Client;
 
 namespace Server
 {
@@ -146,9 +145,7 @@ namespace Server
             int minDelay = 0;
             int maxDelay = 100;
 
-            object freezeLock = new object();
-
-            var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay, freezeLock);
+            var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
 
             // ReadWriteLock for listMe functions
             var localReadWriteLock = new ReaderWriterLock();
@@ -161,7 +158,7 @@ namespace Server
 
             var serverSyncService = new ServerSyncService(keyValuePairs, localReadWriteLock, CrashedServers);
 
-            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, MasteredPartitions, CrashedServers, freezeLock, interceptor);
+            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, MasteredPartitions, CrashedServers, interceptor);
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {

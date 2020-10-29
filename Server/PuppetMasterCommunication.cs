@@ -16,17 +16,15 @@ namespace Server
         private readonly Dictionary<long, List<string>> ServersByPartition;
         private readonly HashSet<string> CrashedServers;
         private readonly List<long> MasteredPartitions;
-        private readonly object FreezeLock;
 
         private readonly DelayMessagesInterceptor Interceptor;
 
         public PuppetMasterServerService(Dictionary<long, List<string>> serversByPartitions,
-            List<long> masteredPartitions, HashSet<string> crashedServers, object freezeLock, DelayMessagesInterceptor interceptor)
+            List<long> masteredPartitions, HashSet<string> crashedServers, DelayMessagesInterceptor interceptor)
         {
             ServersByPartition = serversByPartitions;
             MasteredPartitions = masteredPartitions;
             CrashedServers = crashedServers;
-            FreezeLock = freezeLock;
             Interceptor = interceptor;
 
         }
