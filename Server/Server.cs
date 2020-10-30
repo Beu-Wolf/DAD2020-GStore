@@ -129,9 +129,10 @@ namespace Server
                         } catch (RpcException e)
                         {
                             // If grpc does no respond, we can assume it has crashed
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable)
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
                                 // Add Url to hash Set
+                                Console.WriteLine($"Server {serverUrl} has crashed");
                                 connectionCrashedServers.Add(serverUrl);
                             } 
                             else
@@ -140,7 +141,6 @@ namespace Server
                             }
                         }
                     }
-                    
 
                     foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                     {
@@ -158,7 +158,7 @@ namespace Server
                         }
                         catch (RpcException e)
                         {
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable)
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
                                 // Add Url to hash Set
                                 connectionCrashedServers.Add(serverUrl);

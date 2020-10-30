@@ -41,6 +41,7 @@ namespace Client
 
         public bool TryChangeCommunicationChannel(int server_id)
         {
+            Console.WriteLine("Trying to connect to " + server_id);
             try
             {
                 currentServerId = server_id;
@@ -57,6 +58,12 @@ namespace Client
         public void ReadObject(int partition_id, int object_id, int server_id)
         {
             // Check if connected Server has requested partition
+
+            if(ServersIdByPartition[partition_id].Count == 0)
+            {
+                Console.WriteLine($"No available server for partition {partition_id}");
+                return;
+            }
 
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
             {
@@ -87,7 +94,7 @@ namespace Client
             } catch (RpcException e)
             {
                 // If error is because Server failed, update list of crashed Servers
-                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
                     CrashedServers.Add(currentServerId);
                     foreach (var kvPair in ServersIdByPartition)
@@ -110,6 +117,12 @@ namespace Client
 
             int currentServerPartitionIndex;
             List<int> ServersOfPartition = ServersIdByPartition[partition_id];
+
+            if (ServersOfPartition.Count == 0)
+            {
+                Console.WriteLine($"No available servers for partition {partition_id}");
+                return;
+            }
 
             // Check if connected to server with desired partition
             if (!ServersOfPartition.Contains(currentServerId))
@@ -147,7 +160,7 @@ namespace Client
                     if (e.Status.StatusCode != StatusCode.PermissionDenied)
                     {
                         // If error is because Server failed, keep it
-                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                         {
                             crashedServers.Add(currentServerId);
                         }
@@ -155,13 +168,15 @@ namespace Client
                         {
                             throw e;
                         }
-
                     }
-                    // Connect to next server in list
-                    currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
-                    TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
-                    Console.WriteLine("Now connecting to server " + ServersOfPartition[currentServerPartitionIndex] + " at " + ServerUrls[currentServerId]);
-                    numTries++;
+
+                    if (++numTries < ServersOfPartition.Count)
+                    {
+                        // Connect to next server in list
+                        currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
+                        TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
+                    }
+
                 }
             }
 
@@ -198,7 +213,7 @@ namespace Client
             } 
             catch (RpcException e)
             {
-                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
                     // Update Crashed Server List
                     CrashedServers.Add(currentServerId);
@@ -238,7 +253,7 @@ namespace Client
                 }
                 catch (RpcException e)
                 {
-                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded)
+                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                     {
                         // Update Crashed Server List
                         CrashedServers.Add(currentServerId);
