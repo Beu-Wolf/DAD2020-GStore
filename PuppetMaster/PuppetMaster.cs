@@ -103,7 +103,7 @@ namespace PuppetMaster
                 goto ReplicationUsage;
             }
 
-            if (!int.TryParse(args[1], out int replicationFactor))
+            if (!int.TryParse(args[1], out int replicationFactor) || replicationFactor <= 0)
             {
                 this.Form.Error("Replication: r must be a positive number");
                 return;
