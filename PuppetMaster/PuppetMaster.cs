@@ -48,6 +48,13 @@ namespace PuppetMaster
         {
         }
 
+        public void LinkForm(PuppetMasterForm form)
+        {
+            this.Form = form;
+            this.Form.LinkPuppetMaster(this);
+        }
+
+
         public void ParseCommand(string command)
         {
             string[] args = command.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
@@ -87,121 +94,76 @@ namespace PuppetMaster
                     break;
             }
         }
-
-        private void HandleWaitCommand(string[] args)
+        
+        private void HandleReplicationFactorCommand(string[] args)
         {
             if (args.Length != 1+1)
             {
-                this.Form.Error("Wait: wrong number of arguments");
-                goto WaitUsage;
+                this.Form.Error("Replication: wrong number of arguments");
+                goto ReplicationUsage;
             }
 
-            // maybe disable form input for x_ms
+            if (!int.TryParse(args[1], out int replicationFactor))
+            {
+                this.Form.Error("Replication: r must be a positive number");
+                return;
+            }
+
+            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
+            {
+                this.Form.Error($"Replication: replication factor already assigned to {this.ReplicationFactor}");
+                return;
+            }
+
+            this.ReplicationFactor = replicationFactor;
 
             return;
-        WaitUsage:
-            this.Form.Error("Wait usage: Wait x_ms");
+        ReplicationUsage:
+            this.Form.Error("ReplicationFactor usage: ReplicationFactor r");
         }
-
-        private void HandleUnfreezeCommand(string[] args)
+        
+        private void HandleServerCommand(string[] args)
         {
-            if (args.Length != 1+1)
+            if (args.Length != 1+4)
             {
-                this.Form.Error("Unfreeze: wrong number of arguments");
-                goto UnfreezeUsage;
+                this.Form.Error("Server: wrong number of arguments");
+                goto ServerUsage;
             }
 
             string server_id = args[1];
-            if(!this.Servers.ContainsKey(server_id))
+            string server_url = args[2];
+
+            if(!int.TryParse(args[3], out int min_delay)
+                || !int.TryParse(args[4], out int max_delay)
+                || min_delay < 0
+                || max_delay < 0)
             {
-                this.Form.Error($"Unfreeze: server {server_id} does not exist");
+                this.Form.Error("Server: delay arguments must be positive numbers");
                 return;
             }
 
-            // send unfreeze command
-
-            return;
-        UnfreezeUsage:
-            this.Form.Error("Unfreeze usage: Unreeze server_id");
-        }
-
-        private void HandleFreezeCommand(string[] args)
-        {
-            if (args.Length != 1+1)
+            if (min_delay > max_delay)
             {
-                this.Form.Error("Freeze: wrong number of arguments");
-                goto FreezeUsage;
-            }
-
-            string server_id = args[1];
-            if (!this.Servers.ContainsKey(server_id))
-            {
-                this.Form.Error($"Freeze: server {server_id} does not exist");
+                this.Form.Error("Server: max_delay must be greater or equal than min_delay");
                 return;
             }
 
-            // send freeze command
 
-            return;
-        FreezeUsage:
-            this.Form.Error("Freeze usage: Freeze server_id");
-        }
-
-        private void HandleCrashCommand(string[] args)
-        {
-            if (args.Length != 1+1)
+            if (this.Servers.ContainsKey(server_id))
             {
-                this.Form.Error("Crash: wrong number of arguments");
-                goto CrashUsage;
-            }
-
-            string server_id = args[1];
-            if (!this.Servers.ContainsKey(server_id))
-            {
-                this.Form.Error($"Crash: server {server_id} does not exist");
+                this.Form.Error($"Server: server {server_id} already exists");
                 return;
             }
 
-            // send crash command
+            // instantiate server
+
+            // register server
+            ServerInfo server = new ServerInfo(server_id, server_url);
+            this.Servers[server_id] = server;
 
             return;
-        CrashUsage:
-            this.Form.Error("Crash usage: Crash server_id");
-        }
-
-        private void HandleStatusCommand(string[] args)
-        {
-
-        }
-
-        private void HandleClientCommand(string[] args)
-        {
-            if (args.Length != 1+3)
-            {
-                this.Form.Error("Client: wrong number of arguments");
-                goto ClientUsage;
-            }
-
-            string username = args[1];
-            string client_url = args[2];
-
-
-            if (this.Clients.ContainsKey(username))
-            {
-                this.Form.Error($"Client: client {username} already exists");
-                return;
-            }
-
-            // instantiate client
-
-            // register client
-            ClientInfo client = new ClientInfo(username, client_url);
-            this.Clients[username] = client;
-
-
-            return;
-        ClientUsage:
-            this.Form.Error("Client usage: Client username client_URL script_file");
+        ServerUsage:
+            this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
 
         private void HandlePartitionCommand(string[] args)
@@ -252,81 +214,120 @@ namespace PuppetMaster
             this.Form.Error("Partition usage: Partition r partition_name server_id_1 ... server_id_r");
         }
 
-        private void HandleServerCommand(string[] args)
+        private void HandleClientCommand(string[] args)
         {
-            if (args.Length != 1+4)
+            if (args.Length != 1+3)
             {
-                this.Form.Error("Server: wrong number of arguments");
-                goto ServerUsage;
+                this.Form.Error("Client: wrong number of arguments");
+                goto ClientUsage;
             }
 
-            string server_id = args[1];
-            string server_url = args[2];
+            string username = args[1];
+            string client_url = args[2];
 
-            if(!int.TryParse(args[3], out int min_delay)
-                || !int.TryParse(args[4], out int max_delay)
-                || min_delay < 0
-                || max_delay < 0)
+
+            if (this.Clients.ContainsKey(username))
             {
-                this.Form.Error("Server: delay arguments must be positive numbers");
+                this.Form.Error($"Client: client {username} already exists");
                 return;
             }
 
-            if (min_delay > max_delay)
-            {
-                this.Form.Error("Server: max_delay must be greater or equal than min_delay");
-                return;
-            }
+            // instantiate client
 
+            // register client
+            ClientInfo client = new ClientInfo(username, client_url);
+            this.Clients[username] = client;
 
-            if (this.Servers.ContainsKey(server_id))
-            {
-                this.Form.Error($"Server: server {server_id} already exists");
-                return;
-            }
-
-            // instantiate server
-
-            // register server
-            ServerInfo server = new ServerInfo(server_id, server_url);
-            this.Servers[server_id] = server;
 
             return;
-        ServerUsage:
-            this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
+        ClientUsage:
+            this.Form.Error("Client usage: Client username client_URL script_file");
         }
 
-        private void HandleReplicationFactorCommand(string[] args)
+        private void HandleStatusCommand(string[] args)
+        {
+
+        }
+
+        private void HandleCrashCommand(string[] args)
         {
             if (args.Length != 1+1)
             {
-                this.Form.Error("Replication: wrong number of arguments");
-                goto ReplicationUsage;
+                this.Form.Error("Crash: wrong number of arguments");
+                goto CrashUsage;
             }
 
-            if (!int.TryParse(args[1], out int replicationFactor))
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
             {
-                this.Form.Error("Replication: r must be a positive number");
+                this.Form.Error($"Crash: server {server_id} does not exist");
                 return;
             }
 
-            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
-            {
-                this.Form.Error($"Replication: replication factor already assigned to {this.ReplicationFactor}");
-                return;
-            }
-
-            this.ReplicationFactor = replicationFactor;
+            // send crash command
 
             return;
-        ReplicationUsage:
-            this.Form.Error("ReplicationFactor usage: ReplicationFactor r");
+        CrashUsage:
+            this.Form.Error("Crash usage: Crash server_id");
         }
 
-        public void LinkForm(PuppetMasterForm form)
-        { 
-            this.Form = form;
-            this.Form.LinkPuppetMaster(this);
+        private void HandleFreezeCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Freeze: wrong number of arguments");
+                goto FreezeUsage;
+            }
+
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Freeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send freeze command
+
+            return;
+        FreezeUsage:
+            this.Form.Error("Freeze usage: Freeze server_id");
+        }
+
+        private void HandleUnfreezeCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Unfreeze: wrong number of arguments");
+                goto UnfreezeUsage;
+            }
+
+            string server_id = args[1];
+            if(!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Unfreeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send unfreeze command
+
+            return;
+        UnfreezeUsage:
+            this.Form.Error("Unfreeze usage: Unreeze server_id");
+        }
+
+        private void HandleWaitCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Wait: wrong number of arguments");
+                goto WaitUsage;
+            }
+
+            // maybe disable form input for x_ms
+
+            return;
+        WaitUsage:
+            this.Form.Error("Wait usage: Wait x_ms");
         }
     }
 }
