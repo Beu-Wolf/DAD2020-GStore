@@ -11,13 +11,41 @@ namespace PuppetMaster
     {
         private PuppetMasterForm Form;
 
-        int ReplicationFactor;
+        private readonly struct ServerInfo
+        {
+            private readonly string Id { get; }
+            private readonly string Url { get; }
+            // will have gRPC handles in the future
+
+            internal ServerInfo(string id, string url)
+            {
+                Id = id;
+                Url = url;
+            }
+        }
+
+        private readonly struct ClientInfo
+        {
+            private readonly string Username { get; }
+            private readonly string Url { get; }
+            // will have gRPC handles in the future
+
+            internal ClientInfo(string username, string url)
+            {
+                Username = username;
+                Url = url;
+            }
+        }
+
+        // We need to detect if this value was already assigned
+        // Cannot use readonly since will be initialized after the constructor
+        private int ReplicationFactor = -1;
+        private Dictionary<string, ServerInfo> Servers = new Dictionary<string, ServerInfo>();
+        private Dictionary<string, ClientInfo> Clients = new Dictionary<string, ClientInfo>();
+
 
         public PuppetMaster()
         {
-            // We need to detect if this value was already assigned
-            // Cannot use readonly since we can't initialize it in the constructor
-            this.ReplicationFactor = -1;
         }
 
         public void ParseCommand(string command)
@@ -68,6 +96,8 @@ namespace PuppetMaster
                 goto WaitUsage;
             }
 
+            // maybe disable form input for x_ms
+
             return;
         WaitUsage:
             this.Form.Error("Wait usage: Wait x_ms");
@@ -80,6 +110,15 @@ namespace PuppetMaster
                 this.Form.Error("Unfreeze: wrong number of arguments");
                 goto UnfreezeUsage;
             }
+
+            string server_id = args[1];
+            if(!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Unfreeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send unfreeze command
 
             return;
         UnfreezeUsage:
@@ -94,6 +133,15 @@ namespace PuppetMaster
                 goto FreezeUsage;
             }
 
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Freeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send freeze command
+
             return;
         FreezeUsage:
             this.Form.Error("Freeze usage: Freeze server_id");
@@ -106,6 +154,15 @@ namespace PuppetMaster
                 this.Form.Error("Crash: wrong number of arguments");
                 goto CrashUsage;
             }
+
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Crash: server {server_id} does not exist");
+                return;
+            }
+
+            // send crash command
 
             return;
         CrashUsage:
@@ -124,6 +181,23 @@ namespace PuppetMaster
                 this.Form.Error("Client: wrong number of arguments");
                 goto ClientUsage;
             }
+
+            string username = args[1];
+            string client_url = args[2];
+
+
+            if (this.Clients.ContainsKey(username))
+            {
+                this.Form.Error($"Client: client {username} already exists");
+                return;
+            }
+
+            // instantiate client
+
+            // register client
+            ClientInfo client = new ClientInfo(username, client_url);
+            this.Clients[username] = client;
+
 
             return;
         ClientUsage:
@@ -158,7 +232,20 @@ namespace PuppetMaster
                 this.Form.Error($"Partition: you must supply {this.ReplicationFactor} servers to create this partition");
                 return;
             }
-            this.ReplicationFactor = r;
+
+
+            // check if all partition servers exist
+            bool failed = false;
+            for(int i = 3; i < args.Length; i++)
+            {
+                if(!this.Servers.ContainsKey(args[i]))
+                {
+                    this.Form.Error($"Partition: server {args[i]} does not exist");
+                    failed = true;
+                }
+            }
+            if (failed) return;
+
 
             return;
         PartitionUsage:
@@ -172,6 +259,22 @@ namespace PuppetMaster
                 this.Form.Error("Server: wrong number of arguments");
                 goto ServerUsage;
             }
+
+            string server_id = args[1];
+            string server_url = args[2];
+
+
+            if (this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Server: server {server_id} already exists");
+                return;
+            }
+
+            // instantiate server
+
+            // register server
+            ServerInfo server = new ServerInfo(server_id, server_url);
+            this.Servers[server_id] = server;
 
             return;
         ServerUsage:
