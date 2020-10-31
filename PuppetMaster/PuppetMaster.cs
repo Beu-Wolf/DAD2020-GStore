@@ -11,9 +11,13 @@ namespace PuppetMaster
     {
         private PuppetMasterForm Form;
 
+        int ReplicationFactor;
+
         public PuppetMaster()
         {
-
+            // We need to detect if this value was already assigned
+            // Cannot use readonly since we can't initialize it in the constructor
+            this.ReplicationFactor = -1;
         }
 
         public void ParseCommand(string command)
@@ -133,6 +137,16 @@ namespace PuppetMaster
                 this.Form.Error("Partition: wrong number of arguments");
                 goto PartitionUsage;
             }
+
+            // check if replication factor consistency
+            int r = int.Parse(args[1]);
+            if (this.ReplicationFactor != -1 && r != this.ReplicationFactor)
+            {
+                this.Form.Error("Partition: replication factor already assigned to a different value");
+                return;
+            }
+            this.ReplicationFactor = r;
+
             return;
         PartitionUsage:
             this.Form.Error("Partition usage: Partition r partition_name server_id_1 ... server_id_r");
@@ -158,6 +172,16 @@ namespace PuppetMaster
                 this.Form.Error("Replication: wrong number of arguments");
                 goto ReplicationUsage;
             }
+
+            int rf = int.Parse(args[1]);
+
+            if (this.ReplicationFactor != -1 && rf != this.ReplicationFactor)
+            {
+                this.Form.Error("Replication: replication factor already assigned to a different value");
+                return;
+            }
+
+            this.ReplicationFactor = rf;
 
             return;
         ReplicationUsage:
