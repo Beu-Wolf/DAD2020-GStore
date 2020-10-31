@@ -42,6 +42,7 @@ namespace PuppetMaster
         private int ReplicationFactor = -1;
         private Dictionary<string, ServerInfo> Servers = new Dictionary<string, ServerInfo>();
         private Dictionary<string, ClientInfo> Clients = new Dictionary<string, ClientInfo>();
+        private Dictionary<string, List<string>> Partitions = new Dictionary<string, List<string>>();
 
 
         public PuppetMaster()
@@ -180,7 +181,7 @@ namespace PuppetMaster
                 return;
             }
 
-            // check if replication factor consistency
+            // check if replication factor
             if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
             {
                 this.Form.Error($"Partition: replication factor already assigned to {this.ReplicationFactor}");
@@ -195,8 +196,16 @@ namespace PuppetMaster
                 return;
             }
 
+            // check if unique partition name
+            string partitionName = args[2];
+            if(this.Partitions.ContainsKey(partitionName))
+            {
+                this.Form.Error($"Partition: partition {partitionName} already exists");
+                return;
+            }
 
             // check if all partition servers exist
+            List<string> servers = new List<string>();
             bool failed = false;
             for(int i = 3; i < args.Length; i++)
             {
@@ -204,10 +213,15 @@ namespace PuppetMaster
                 {
                     this.Form.Error($"Partition: server {args[i]} does not exist");
                     failed = true;
+                    continue;
                 }
+                servers.Add(args[i]);
             }
             if (failed) return;
 
+            // create partition
+
+            this.Partitions[partitionName] = servers;
 
             return;
         PartitionUsage:
