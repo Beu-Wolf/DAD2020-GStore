@@ -138,11 +138,24 @@ namespace PuppetMaster
                 goto PartitionUsage;
             }
 
-            // check if replication factor consistency
-            int r = int.Parse(args[1]);
-            if (this.ReplicationFactor != -1 && r != this.ReplicationFactor)
+            if(!int.TryParse(args[1], out int replicationFactor))
             {
-                this.Form.Error("Partition: replication factor already assigned to a different value");
+                this.Form.Error("Partition: invalid type for argument r");
+                return;
+            }
+
+            // check if replication factor consistency
+            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
+            {
+                this.Form.Error($"Partition: replication factor already assigned to {this.ReplicationFactor}");
+                return;
+            }
+            this.ReplicationFactor = replicationFactor;
+
+            // check number of given servers
+            if (this.ReplicationFactor != args.Length - 3)
+            {
+                this.Form.Error($"Partition: you must supply {this.ReplicationFactor} servers to create this partition");
                 return;
             }
             this.ReplicationFactor = r;
@@ -173,15 +186,19 @@ namespace PuppetMaster
                 goto ReplicationUsage;
             }
 
-            int rf = int.Parse(args[1]);
-
-            if (this.ReplicationFactor != -1 && rf != this.ReplicationFactor)
+            if (!int.TryParse(args[1], out int replicationFactor))
             {
-                this.Form.Error("Replication: replication factor already assigned to a different value");
+                this.Form.Error("Replication: invalid type for argument r");
                 return;
             }
 
-            this.ReplicationFactor = rf;
+            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
+            {
+                this.Form.Error($"Replication: replication factor already assigned to {this.ReplicationFactor}");
+                return;
+            }
+
+            this.ReplicationFactor = replicationFactor;
 
             return;
         ReplicationUsage:
