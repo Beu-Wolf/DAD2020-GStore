@@ -323,7 +323,13 @@ namespace PuppetMaster
                 goto WaitUsage;
             }
 
-            // maybe disable form input for x_ms
+            if(!int.TryParse(args[1], out int x_ms) || x_ms < 0)
+            {
+                this.Form.Error("Wait: x_mx must be a positive number");
+                return;
+            }
+
+            // maybe disable form input for x_ms ms
 
             return;
         WaitUsage:
