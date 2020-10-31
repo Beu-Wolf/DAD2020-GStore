@@ -214,7 +214,7 @@ namespace PuppetMaster
 
             if(!int.TryParse(args[1], out int replicationFactor))
             {
-                this.Form.Error("Partition: invalid type for argument r");
+                this.Form.Error("Partition: r must be a positive number");
                 return;
             }
 
@@ -263,6 +263,21 @@ namespace PuppetMaster
             string server_id = args[1];
             string server_url = args[2];
 
+            if(!int.TryParse(args[3], out int min_delay)
+                || !int.TryParse(args[4], out int max_delay)
+                || min_delay < 0
+                || max_delay < 0)
+            {
+                this.Form.Error("Server: delay arguments must be positive numbers");
+                return;
+            }
+
+            if (min_delay > max_delay)
+            {
+                this.Form.Error("Server: max_delay must be greater or equal than min_delay");
+                return;
+            }
+
 
             if (this.Servers.ContainsKey(server_id))
             {
@@ -291,7 +306,7 @@ namespace PuppetMaster
 
             if (!int.TryParse(args[1], out int replicationFactor))
             {
-                this.Form.Error("Replication: invalid type for argument r");
+                this.Form.Error("Replication: r must be a positive number");
                 return;
             }
 
