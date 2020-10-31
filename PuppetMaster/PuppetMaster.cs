@@ -1,9 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.IO;
 using System.Threading.Tasks;
-using System.Threading;
 
 namespace PuppetMaster
 {
@@ -187,6 +185,8 @@ namespace PuppetMaster
                 this.Form.Error($"Partition: replication factor already assigned to {this.ReplicationFactor}");
                 return;
             }
+
+            // even if command fails, set replication factor
             this.ReplicationFactor = replicationFactor;
 
             // check number of given servers
@@ -243,6 +243,15 @@ namespace PuppetMaster
             if (this.Clients.ContainsKey(username))
             {
                 this.Form.Error($"Client: client {username} already exists");
+                return;
+            }
+
+            string script = args[3];
+            string path = "..\\..\\..\\..\\Client\\" + script;
+
+            if(!File.Exists(path))
+            {
+                this.Form.Error($"Client: script file {script} does not exist");
                 return;
             }
 
