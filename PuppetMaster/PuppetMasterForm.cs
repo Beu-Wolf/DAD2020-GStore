@@ -47,6 +47,7 @@ namespace PuppetMaster
 
         private void SendCommandToPuppetMaster()
         {
+            Log(">>> " + CommandBox.Text);
             this.PuppetMaster.ParseCommand(CommandBox.Text);
             CommandBox.Clear();
         }
