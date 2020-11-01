@@ -1,19 +1,21 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
-using System.Threading;
+using Grpc.Net.Client;
 
 namespace PuppetMaster
 {
     public class PuppetMaster
     {
         private PuppetMasterForm Form;
+        private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
+            = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
+        private const int PCS_PORT = 10000;
 
         public PuppetMaster()
         {
-
+            AppContext.SetSwitch(
+    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
         }
 
         public void ParseCommand(string command)
@@ -121,7 +123,55 @@ namespace PuppetMaster
                 goto ClientUsage;
             }
 
+            string username = args[1];
+            string url = args[2];
+            string scriptFile = args[3];
+
+            if (!url.StartsWith("http://"))
+            {
+                goto InvalidURL;
+            }
+            string host = url.Replace("http://", "");
+
+            PCSGrpcService.PCSGrpcServiceClient grpcClient;
+            if (PCSClients.ContainsKey(host))
+            {
+                grpcClient = PCSClients[host];
+            }
+            else
+            {
+                try
+                {
+                    string address = "http://" + host + ":" + PCS_PORT;
+                    GrpcChannel channel = GrpcChannel.ForAddress(address);
+                    grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                }
+                catch (Exception)
+                {
+                    this.Form.Error("Client: unable to connect to PCS");
+                    return;
+                }
+            }
+
+            try {
+                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile }).Ok)
+                {
+                    this.Form.Log("Client: successfully launched client at " + host);
+                }
+                else
+                {
+                    this.Form.Error("Client: failed launching client");
+                }
+            }
+            catch (Exception)
+            {
+                this.Form.Error("Client: failed sending request to PCS");
+            }
+
             return;
+
+        InvalidURL:
+            this.Form.Error("Client: Invalid URL");
         ClientUsage:
             this.Form.Error("Client usage: Client username client_URL script_file");
         }
