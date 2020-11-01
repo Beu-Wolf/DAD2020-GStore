@@ -269,7 +269,15 @@ namespace PuppetMaster
 
         private void HandleStatusCommand(string[] args)
         {
+            if(args.Length != 1)
+            {
+                this.Form.Error("Status: wrong number of arguments");
+                goto StatusUsage;
+            }
 
+            return;
+        StatusUsage:
+            this.Form.Error("Status usage: Status");
         }
 
         private void HandleCrashCommand(string[] args)
