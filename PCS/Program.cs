@@ -82,7 +82,7 @@ namespace PCS
 
         public override Task<LaunchServerReply> LaunchServer(LaunchServerRequest request, ServerCallContext context)
         {
-            Pcs.LaunchServer(request.Host, request.Port);
+            Pcs.LaunchServer("0.0.0.0", request.Port);
             return Task.FromResult(new LaunchServerReply { Ok = true });
         }
     }

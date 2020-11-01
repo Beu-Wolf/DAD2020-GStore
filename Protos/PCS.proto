@@ -6,8 +6,7 @@ service PCSGrpcService {
 }
 
 message LaunchServerRequest {
-	string host = 1;
-	int32 port = 2;
+	int32 port = 1;
 }
 
 message LaunchServerReply {
