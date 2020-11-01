@@ -1,5 +1,6 @@
 ﻿using Grpc.Core;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
@@ -8,10 +9,10 @@ namespace Client
 {
     class PuppetMasterCommunicationService : PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceBase
     {
-        private readonly Dictionary<long, List<int>> ServersIdByPartition;
-        private readonly HashSet<int> CrashedServers;
+        private readonly ConcurrentDictionary<long, List<int>> ServersIdByPartition;
+        private readonly ConcurrentBag<int> CrashedServers;
 
-        public PuppetMasterCommunicationService(Dictionary<long, List<int>> serversIdByPartition, HashSet<int> crashedServers)
+        public PuppetMasterCommunicationService(ConcurrentDictionary<long, List<int>> serversIdByPartition, ConcurrentBag<int> crashedServers)
         {
             ServersIdByPartition = serversIdByPartition;
             CrashedServers = crashedServers;

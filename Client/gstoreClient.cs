@@ -17,14 +17,14 @@ namespace Client
         private GrpcChannel Channel { get; set; }
         private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
 
-        private readonly Dictionary<long, List<int>> ServersIdByPartition;
-        private readonly Dictionary<int, string> ServerUrls;
-        private readonly HashSet<int> CrashedServers;
+        private readonly ConcurrentDictionary<long, List<int>> ServersIdByPartition;
+        private readonly ConcurrentDictionary<int, string> ServerUrls;
+        private readonly ConcurrentBag<int> CrashedServers;
         private int currentServerId;
 
 
 
-        public GSTOREClient(Dictionary<long, List<int>> serversIdByPartition, Dictionary<int, string> serverUrls, HashSet<int> crashedServers)
+        public GSTOREClient(ConcurrentDictionary<long, List<int>> serversIdByPartition, ConcurrentDictionary<int, string> serverUrls, ConcurrentBag<int> crashedServers)
         {
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
@@ -139,7 +139,7 @@ namespace Client
                 },
                 Value = value
             };
-            var crashedServers = new HashSet<int>();
+            var crashedServers = new ConcurrentBag<int>();
             while (!success && numTries < ServersOfPartition.Count)
             {
                 try
@@ -173,7 +173,7 @@ namespace Client
             }
 
             // Remove crashed servers from list and update CrashedServers list
-            CrashedServers.UnionWith(crashedServers);
+            CrashedServers.Union(crashedServers);
             foreach (var crashedServer in crashedServers)
             {
                 foreach (var kvPair in ServersIdByPartition)
@@ -286,19 +286,15 @@ namespace Client
 
             string host = args[0];
 
-            var serverIdsByPartition = new Dictionary<long, List<int>>
-            {
-                {1, new List<int> {1, 2} },
-                {2, new List<int> {2} }
-            };
+            var serverIdsByPartition = new ConcurrentDictionary<long, List<int>>();
+            serverIdsByPartition.TryAdd(1, new List<int> { 1, 2 });
+            serverIdsByPartition.TryAdd(2, new List<int> { 2 });
 
-            var serverUrls = new Dictionary<int, string>
-            {
-                {1, "http://localhost:10001" },
-                {2, "http://localhost:10002" }
-            };
+            var serverUrls = new ConcurrentDictionary<int, string>();
+            serverUrls.TryAdd(1, "http://localhost:10001");
+            serverUrls.TryAdd(2, "http://localhost:10002");
 
-            var crashedServers = new HashSet<int>();
+            var crashedServers = new ConcurrentBag<int>();
 
             var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
 

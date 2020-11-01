@@ -6,6 +6,7 @@ using Grpc.Core;
 using Grpc.Core.Utils;
 using System.Linq;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace Server
 {
@@ -13,15 +14,15 @@ namespace Server
     public class ServerSyncService : ServerSyncGrpcService.ServerSyncGrpcServiceBase
     {
         // Dict with all values
-        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+        private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
 
 
-        private readonly Dictionary<long, List<string>> ServersByPartition;
-        private readonly HashSet<string> CrashedServers;
+        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentBag<string> CrashedServers;
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, HashSet<string> crashedServers)
+        public ServerSyncService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             LocalReadWriteLock = readerWriterLock;
@@ -88,7 +89,7 @@ namespace Server
 
         public RemoveCrashedServersReply RemoveCrashed(RemoveCrashedServersRequest request)
         {
-            CrashedServers.UnionWith(request.ServerUrls);
+            CrashedServers.Union(request.ServerUrls);
             ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerUrls.Contains(x));
             return new RemoveCrashedServersReply
             {

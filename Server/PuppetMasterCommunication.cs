@@ -1,5 +1,6 @@
 ﻿using Grpc.Core;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Text;
 using System.Threading;
@@ -13,14 +14,14 @@ namespace Server
         public string MyHost { get; set; }
 
 
-        private readonly Dictionary<long, List<string>> ServersByPartition;
-        private readonly HashSet<string> CrashedServers;
+        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentBag<string> CrashedServers;
         private readonly List<long> MasteredPartitions;
 
         private readonly DelayMessagesInterceptor Interceptor;
 
-        public PuppetMasterServerService(Dictionary<long, List<string>> serversByPartitions,
-            List<long> masteredPartitions, HashSet<string> crashedServers, DelayMessagesInterceptor interceptor)
+        public PuppetMasterServerService(ConcurrentDictionary<long, List<string>> serversByPartitions,
+            List<long> masteredPartitions, ConcurrentBag<string> crashedServers, DelayMessagesInterceptor interceptor)
         {
             ServersByPartition = serversByPartitions;
             MasteredPartitions = masteredPartitions;
