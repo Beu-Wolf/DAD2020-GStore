@@ -9,5 +9,4 @@ message StatusRequest {
 }
 
 message StatusReply {
-	bool success = 1;
 }

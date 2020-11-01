@@ -96,14 +96,7 @@ namespace Client
                 // If error is because Server failed, update list of crashed Servers
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    CrashedServers.Add(currentServerId);
-                    foreach (var kvPair in ServersIdByPartition)
-                    {
-                        if (kvPair.Value.Contains(currentServerId))
-                        {
-                            kvPair.Value.Remove(currentServerId);
-                        }
-                    }
+                    UpdateCrashedServersList();
                 }
 
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
@@ -146,7 +139,6 @@ namespace Client
                 },
                 Value = value
             };
-
             var crashedServers = new HashSet<int>();
             while (!success && numTries < ServersOfPartition.Count)
             {
@@ -215,16 +207,7 @@ namespace Client
             {
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    // Update Crashed Server List
-                    CrashedServers.Add(currentServerId);
-                    foreach (var kvPair in ServersIdByPartition)
-                    {
-                        if (kvPair.Value.Contains(currentServerId))
-                        {
-                            kvPair.Value.Remove(currentServerId);
-                        }
-                    }
-                    Console.WriteLine($"Server {currentServerId} is down");
+                    UpdateCrashedServersList();
                 } else
                 {
                     throw e;
@@ -255,16 +238,7 @@ namespace Client
                 {
                     if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                     {
-                        // Update Crashed Server List
-                        CrashedServers.Add(currentServerId);
-                        foreach (var kvPair in ServersIdByPartition)
-                        {
-                            if (kvPair.Value.Contains(currentServerId))
-                            {
-                                kvPair.Value.Remove(currentServerId);
-                            }
-                        }
-                        Console.WriteLine($"Server {currentServerId} is down");
+                        UpdateCrashedServersList();
                     }
                     else
                     {
@@ -274,6 +248,19 @@ namespace Client
             }
         }
 
+        private void UpdateCrashedServersList()
+        {
+            // Update Crashed Server List
+            CrashedServers.Add(currentServerId);
+            foreach (var kvPair in ServersIdByPartition)
+            {
+                if (kvPair.Value.Contains(currentServerId))
+                {
+                    kvPair.Value.Remove(currentServerId);
+                }
+            }
+            Console.WriteLine($"Server {currentServerId} is down");
+        }
     }
 
 

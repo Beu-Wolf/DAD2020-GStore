@@ -34,10 +34,7 @@ namespace Client
             {
                 Console.WriteLine($"Server {server}");
             }
-            return new StatusReply
-            {
-                Success = true
-            };
+            return new StatusReply();
         }
 
     }
