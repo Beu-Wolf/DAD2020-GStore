@@ -246,15 +246,6 @@ namespace PuppetMaster
                 return;
             }
 
-            string script = args[3];
-            string path = "..\\..\\..\\..\\Client\\" + script;
-
-            if(!File.Exists(path))
-            {
-                this.Form.Error($"Client: script file {script} does not exist");
-                return;
-            }
-
             // instantiate client
 
             // register client
