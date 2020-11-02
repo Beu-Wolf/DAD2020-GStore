@@ -17,16 +17,18 @@ namespace Client
         private GrpcChannel Channel { get; set; }
         private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
 
-        private readonly Dictionary<long, List<int>> ServersIdByPartition;
-        private readonly Dictionary<int, string> ServerUrls;
+        private readonly ConcurrentDictionary<long, List<int>> ServersIdByPartition;
+        private readonly ConcurrentDictionary<int, string> ServerUrls;
+        private readonly ConcurrentBag<int> CrashedServers;
         private int currentServerId;
 
 
 
-        public GSTOREClient(Dictionary<long, List<int>> serversIdByPartition, Dictionary<int, string> serverUrls)
+        public GSTOREClient(ConcurrentDictionary<long, List<int>> serversIdByPartition, ConcurrentDictionary<int, string> serverUrls, ConcurrentBag<int> crashedServers)
         {
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
+            CrashedServers = crashedServers;
 
             // Connect to random server
             Random rnd = new Random();
@@ -39,6 +41,7 @@ namespace Client
 
         public bool TryChangeCommunicationChannel(int server_id)
         {
+            Console.WriteLine("Trying to connect to " + server_id);
             try
             {
                 currentServerId = server_id;
@@ -55,6 +58,12 @@ namespace Client
         public void ReadObject(int partition_id, int object_id, int server_id)
         {
             // Check if connected Server has requested partition
+
+            if(ServersIdByPartition[partition_id].Count == 0)
+            {
+                Console.WriteLine($"No available server for partition {partition_id}");
+                return;
+            }
 
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
             {
@@ -84,6 +93,12 @@ namespace Client
                 Console.WriteLine("Received: " + reply.Value);
             } catch (RpcException e)
             {
+                // If error is because Server failed, update list of crashed Servers
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                {
+                    UpdateCrashedServersList();
+                }
+
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
                 Console.WriteLine($"Error message: {e.Status.Detail}");
                 Console.WriteLine("N/A");
@@ -95,6 +110,12 @@ namespace Client
 
             int currentServerPartitionIndex;
             List<int> ServersOfPartition = ServersIdByPartition[partition_id];
+
+            if (ServersOfPartition.Count == 0)
+            {
+                Console.WriteLine($"No available servers for partition {partition_id}");
+                return;
+            }
 
             // Check if connected to server with desired partition
             if (!ServersOfPartition.Contains(currentServerId))
@@ -118,6 +139,7 @@ namespace Client
                 },
                 Value = value
             };
+            var crashedServers = new ConcurrentBag<int>();
             while (!success && numTries < ServersOfPartition.Count)
             {
                 try
@@ -129,17 +151,39 @@ namespace Client
                 {
                     if (e.Status.StatusCode != StatusCode.PermissionDenied)
                     {
-                        throw e;
+                        // If error is because Server failed, keep it
+                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                        {
+                            crashedServers.Add(currentServerId);
+                        }
+                        else
+                        {
+                            throw e;
+                        }
                     }
-                    // Connect to next server in list
-                    currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
-                    TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
-                    Console.WriteLine("Now connecting to server " + ServersOfPartition[currentServerPartitionIndex] + " at " + ServerUrls[currentServerId]);
-                    numTries++;
+
+                    if (++numTries < ServersOfPartition.Count)
+                    {
+                        // Connect to next server in list
+                        currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
+                        TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
+                    }
+
                 }
             }
 
-            
+            // Remove crashed servers from list and update CrashedServers list
+            CrashedServers.Union(crashedServers);
+            foreach (var crashedServer in crashedServers)
+            {
+                foreach (var kvPair in ServersIdByPartition)
+                {                                            
+                    if (kvPair.Value.Contains(crashedServer))
+                    {
+                        kvPair.Value.Remove(crashedServer);
+                    }
+                }
+            }
         }
 
         public void ListServer(int server_id)
@@ -148,13 +192,29 @@ namespace Client
             {
                 TryChangeCommunicationChannel(server_id);
             }
-            ListServerRequest request = new ListServerRequest();
-            var reply = Client.ListServer(request);
-            Console.WriteLine("Received from server: " + server_id);
-            foreach (var obj in reply.Objects)
+
+            try
             {
-                Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                ListServerRequest request = new ListServerRequest();
+                var reply = Client.ListServer(request);
+                Console.WriteLine("Received from server: " + server_id);
+                foreach (var obj in reply.Objects)
+                {
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                }
+            } 
+            catch (RpcException e)
+            {
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                {
+                    UpdateCrashedServersList();
+                } else
+                {
+                    throw e;
+                }
             }
+
+            
         }
 
         public void ListGlobal()
@@ -163,16 +223,44 @@ namespace Client
             {
                 TryChangeCommunicationChannel(serverId);
 
-                ListGlobalRequest request = new ListGlobalRequest();
-                var reply = Client.ListGlobal(request);
-                Console.WriteLine("Received from " + serverId);
-                foreach (var key in reply.Keys)
+                try
                 {
-                    Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+
+                    ListGlobalRequest request = new ListGlobalRequest();
+                    var reply = Client.ListGlobal(request);
+                    Console.WriteLine("Received from " + serverId);
+                    foreach (var key in reply.Keys)
+                    {
+                        Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+                    }
+                }
+                catch (RpcException e)
+                {
+                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                    {
+                        UpdateCrashedServersList();
+                    }
+                    else
+                    {
+                        throw e;
+                    }
                 }
             }
         }
 
+        private void UpdateCrashedServersList()
+        {
+            // Update Crashed Server List
+            CrashedServers.Add(currentServerId);
+            foreach (var kvPair in ServersIdByPartition)
+            {
+                if (kvPair.Value.Contains(currentServerId))
+                {
+                    kvPair.Value.Remove(currentServerId);
+                }
+            }
+            Console.WriteLine($"Server {currentServerId} is down");
+        }
     }
 
 
@@ -180,32 +268,52 @@ namespace Client
     
         static void Main(string[] args) {
 
-            AppContext.SetSwitch(
-    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-
-            if (args.Length != 1) {
-                Console.WriteLine("Usage: client.exe <script_file>");
+            if (args.Length != 3)
+            {
+                Console.WriteLine("Usage: Client.exe host port <script_file>");
                 return;
             }
 
-            var serverIdsByPartition = new Dictionary<long, List<int>>
+
+            if (!int.TryParse(args[1], out int Port))
             {
-                {1, new List<int> {1, 2} },
-                {2, new List<int> {2} }
+                Console.WriteLine("Invalid port value");
+                return;
+            }
+
+            AppContext.SetSwitch(
+    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
+
+            string host = args[0];
+
+            var serverIdsByPartition = new ConcurrentDictionary<long, List<int>>();
+            serverIdsByPartition.TryAdd(1, new List<int> { 1, 2 });
+            serverIdsByPartition.TryAdd(2, new List<int> { 2 });
+
+            var serverUrls = new ConcurrentDictionary<int, string>();
+            serverUrls.TryAdd(1, "http://localhost:10001");
+            serverUrls.TryAdd(2, "http://localhost:10002");
+
+            var crashedServers = new ConcurrentBag<int>();
+
+            var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
+
+            var server = new Grpc.Core.Server
+            {
+                Services =
+                {
+                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, crashedServers))
+                },
+                Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
+
             };
 
-            var serverUrls = new Dictionary<int, string>
-            {
-                {1, "http://localhost:10001" },
-                {2, "http://localhost:10002" }
-            };
-
-            var client = new GSTOREClient(serverIdsByPartition, serverUrls);
+            server.Start();
 
             try {
                     string line;
 
-                    System.IO.StreamReader file = new System.IO.StreamReader(args[0]);
+                    System.IO.StreamReader file = new System.IO.StreamReader(args[2]);
                     while ((line = file.ReadLine()) != null) {
                         string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
                         CommandDispatcher(cmd, file, client);
@@ -219,11 +327,14 @@ namespace Client
                     Console.ReadKey();
 
 
-                } catch (System.IO.FileNotFoundException) {
-                    Console.WriteLine("File not found. Exiting...");
-                    return;
-                }
+
+            } catch (System.IO.FileNotFoundException) {
+                Console.WriteLine("File not found. Exiting...");
+            } finally
+            {
+                server.ShutdownAsync().Wait();
             }
+        }
 
         static void CommandDispatcher(string[] cmd, System.IO.StreamReader file, GSTOREClient client) {
             switch (cmd[0]) {

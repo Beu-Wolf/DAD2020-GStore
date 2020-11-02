@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,18 +20,29 @@ namespace Server
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
-        private readonly Dictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
         private readonly List<long> MasteredPartitions;
+        private readonly ConcurrentBag<string> CrashedServers;
+
 
         public ClientServerService() {}
 
-        public ClientServerService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions, List<long> masteredPartitions, ReaderWriterLock readerWriterLock)
+        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartitions,
+            List<long> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
             MasteredPartitions = masteredPartitions;
             LocalReadWriteLock = readerWriterLock;
+            CrashedServers = crashedServers;
+        }
+
+        private void UpdateCrashedServers(long partition, HashSet<string> crashedServers)
+        {
+            CrashedServers.Union(crashedServers);
+
+            ServersByPartition[partition].RemoveAll(x => crashedServers.Contains(x));
         }
 
         // Read Object
@@ -57,6 +69,7 @@ namespace Server
                     Value = objectValueManager.Value
                 };
                 objectValueManager.UnlockRead();
+
                 LocalReadWriteLock.ReleaseReaderLock();
                 return reply;
                 
@@ -100,34 +113,86 @@ namespace Server
                         objectValueManager.LockWrite();
                     }
 
+                    var connectionCrashedServers = new HashSet<string>();
 
                     foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                     {
+
                         var channel = GrpcChannel.ForAddress(serverUrl);
                         var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
                         // What to do if success returns false ?
-                        client.LockObject(new LockObjectRequest
+                        try
                         {
-                            Key = request.Key
-                        });
+                            client.LockObject(new LockObjectRequest
+                            {
+                                Key = request.Key
+                            });
+                        } catch (RpcException e)
+                        {
+                            // If grpc does no respond, we can assume it has crashed
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
+                            {
+                                // Add Url to hash Set
+                                Console.WriteLine($"Server {serverUrl} has crashed");
+                                connectionCrashedServers.Add(serverUrl);
+                            } 
+                            else
+                            {
+                                throw e;
+                            }
+                        }
+                    }
+
+                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                    {
+                        try
+                        {
+                            var channel = GrpcChannel.ForAddress(serverUrl);
+                            var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                            // What to do if success returns false ?
+                            client.ReleaseObjectLock(new ReleaseObjectLockRequest
+                            {
+                                Key = request.Key,
+                                Value = request.Value
+
+                            });
+                        }
+                        catch (RpcException e)
+                        {
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
+                            {
+                                // Add Url to hash Set
+                                connectionCrashedServers.Add(serverUrl);
+                            }
+                            else
+                            {
+                                throw e;
+                            }
+                        }
                     }
 
 
-                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                    if (connectionCrashedServers.Any())
                     {
-                        var channel = GrpcChannel.ForAddress(serverUrl);
-                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-                        // What to do if success returns false ?
-                        client.ReleaseObjectLock(new ReleaseObjectLockRequest
+                        // Update the crashed servers
+                        UpdateCrashedServers(request.Key.PartitionId, connectionCrashedServers);
+                        
+                        // Contact Partition slaves an update their view of the partition
+                        foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                         {
-                            Key = request.Key,
-                            Value = request.Value
+                            var channel = GrpcChannel.ForAddress(serverUrl);
+                            var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
 
-                        });
+                            client.RemoveCrashedServers(new RemoveCrashedServersRequest
+                            {
+                                PartitionId = request.Key.PartitionId,
+                                ServerUrls = {connectionCrashedServers}
+                                
+                            });
+                        }
                     }
 
                     objectValueManager.UnlockWrite(request.Value);
-
 
                     return new WriteObjectReply
                     {

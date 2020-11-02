@@ -6,6 +6,7 @@ using Grpc.Core;
 using Grpc.Core.Utils;
 using System.Linq;
 using System.Threading;
+using System.Collections.Concurrent;
 
 namespace Server
 {
@@ -13,14 +14,20 @@ namespace Server
     public class ServerSyncService : ServerSyncGrpcService.ServerSyncGrpcServiceBase
     {
         // Dict with all values
-        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+        private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+
+
+        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentBag<string> CrashedServers;
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, ReaderWriterLock readerWriterLock)
+        public ServerSyncService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             LocalReadWriteLock = readerWriterLock;
+            CrashedServers = crashedServers;
+            ServersByPartition = serversByPartition;
         }
 
 
@@ -70,6 +77,21 @@ namespace Server
             objectValueManager.UnlockWrite(request.Value);
 
             return new ReleaseObjectLockReply
+            {
+                Success = true
+            };
+        }
+
+        public override Task<RemoveCrashedServersReply> RemoveCrashedServers(RemoveCrashedServersRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(RemoveCrashed(request));
+        }
+
+        public RemoveCrashedServersReply RemoveCrashed(RemoveCrashedServersRequest request)
+        {
+            CrashedServers.Union(request.ServerUrls);
+            ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerUrls.Contains(x));
+            return new RemoveCrashedServersReply
             {
                 Success = true
             };

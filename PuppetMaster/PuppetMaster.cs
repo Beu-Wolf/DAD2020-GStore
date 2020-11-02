@@ -2,11 +2,46 @@
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Grpc.Net.Client;
+using System.Collections.Generic;
 
 namespace PuppetMaster
 {
     public class PuppetMaster
     {
+
+        private readonly struct ServerInfo
+        {
+            private readonly string Id { get; }
+            private readonly string Url { get; }
+            // will have gRPC handles in the future
+
+            internal ServerInfo(string id, string url)
+            {
+                Id = id;
+                Url = url;
+            }
+        }
+
+        private readonly struct ClientInfo
+        {
+            private readonly string Username { get; }
+            private readonly string Url { get; }
+            // will have gRPC handles in the future
+
+            internal ClientInfo(string username, string url)
+            {
+                Username = username;
+                Url = url;
+            }
+        }
+
+        // We need to detect if this value was already assigned
+        // Cannot use readonly since will be initialized after the constructor
+        private int ReplicationFactor = -1;
+        private ConcurrentDictionary<string, ServerInfo> Servers = new ConcurrentDictionary<string, ServerInfo>();
+        private ConcurrentDictionary<string, ClientInfo> Clients = new ConcurrentDictionary<string, ClientInfo>();
+        private ConcurrentDictionary<string, List<string>> Partitions = new ConcurrentDictionary<string, List<string>>();
+
         private PuppetMasterForm Form;
         private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
             = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
@@ -14,11 +49,19 @@ namespace PuppetMaster
             = new ConcurrentDictionary<int, string>();
         private const int PCS_PORT = 10000;
 
+
         public PuppetMaster()
         {
             AppContext.SetSwitch(
     "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
         }
+
+        public void LinkForm(PuppetMasterForm form)
+        {
+            this.Form = form;
+            this.Form.LinkPuppetMaster(this);
+        }
+
 
         public void ParseCommand(string command)
         {
@@ -59,137 +102,34 @@ namespace PuppetMaster
                     break;
             }
         }
-
-        private void HandleWaitCommand(string[] args)
+        
+        private void HandleReplicationFactorCommand(string[] args)
         {
             if (args.Length != 1+1)
             {
-                this.Form.Error("Wait: wrong number of arguments");
-                goto WaitUsage;
+                this.Form.Error("Replication: wrong number of arguments");
+                goto ReplicationUsage;
             }
+
+            if (!int.TryParse(args[1], out int replicationFactor) || replicationFactor <= 0)
+            {
+                this.Form.Error("Replication: r must be a positive number");
+                return;
+            }
+
+            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
+            {
+                this.Form.Error($"Replication: replication factor already assigned to {this.ReplicationFactor}");
+                return;
+            }
+
+            this.ReplicationFactor = replicationFactor;
 
             return;
-        WaitUsage:
-            this.Form.Error("Wait usage: Wait x_ms");
+        ReplicationUsage:
+            this.Form.Error("ReplicationFactor usage: ReplicationFactor r");
         }
-
-        private void HandleUnfreezeCommand(string[] args)
-        {
-            if (args.Length != 1+1)
-            {
-                this.Form.Error("Unfreeze: wrong number of arguments");
-                goto UnfreezeUsage;
-            }
-
-            return;
-        UnfreezeUsage:
-            this.Form.Error("Unfreeze usage: Unreeze server_id");
-        }
-
-        private void HandleFreezeCommand(string[] args)
-        {
-            if (args.Length != 1+1)
-            {
-                this.Form.Error("Freeze: wrong number of arguments");
-                goto FreezeUsage;
-            }
-
-            return;
-        FreezeUsage:
-            this.Form.Error("Freeze usage: Freeze server_id");
-        }
-
-        private void HandleCrashCommand(string[] args)
-        {
-            if (args.Length != 1+1)
-            {
-                this.Form.Error("Crash: wrong number of arguments");
-                goto CrashUsage;
-            }
-
-            return;
-        CrashUsage:
-            this.Form.Error("Crash usage: Crash server_id");
-        }
-
-        private void HandleStatusCommand(string[] args)
-        {
-
-        }
-
-        private void HandleClientCommand(string[] args)
-        {
-            if (args.Length != 1+3)
-            {
-                this.Form.Error("Client: wrong number of arguments");
-                goto ClientUsage;
-            }
-
-            string username = args[1];
-            string url = args[2];
-            string scriptFile = args[3];
-
-            if (!url.StartsWith("http://"))
-            {
-                goto InvalidURL;
-            }
-            string host = url.Replace("http://", "");
-
-            PCSGrpcService.PCSGrpcServiceClient grpcClient;
-            if (PCSClients.ContainsKey(host))
-            {
-                grpcClient = PCSClients[host];
-            }
-            else
-            {
-                try
-                {
-                    string address = "http://" + host + ":" + PCS_PORT;
-                    GrpcChannel channel = GrpcChannel.ForAddress(address);
-                    grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
-                }
-                catch (Exception)
-                {
-                    this.Form.Error("Client: unable to connect to PCS");
-                    return;
-                }
-            }
-
-            try {
-                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile }).Ok)
-                {
-                    this.Form.Log("Client: successfully launched client at " + host);
-                }
-                else
-                {
-                    this.Form.Error("Client: failed launching client");
-                }
-            }
-            catch (Exception)
-            {
-                this.Form.Error("Client: failed sending request to PCS");
-            }
-
-            return;
-
-        InvalidURL:
-            this.Form.Error("Client: Invalid URL");
-        ClientUsage:
-            this.Form.Error("Client usage: Client username client_URL script_file");
-        }
-
-        private void HandlePartitionCommand(string[] args)
-        {
-            if (args.Length < 1+3)
-            {
-                this.Form.Error("Partition: wrong number of arguments");
-                goto PartitionUsage;
-            }
-            return;
-        PartitionUsage:
-            this.Form.Error("Partition usage: Partition r partition_name server_id_1 ... server_id_r");
-        }
-
+        
         private void HandleServerCommand(string[] args)
         {
             if (args.Length != 1+4)
@@ -197,11 +137,8 @@ namespace PuppetMaster
                 this.Form.Error("Server: wrong number of arguments");
                 goto ServerUsage;
             }
-
             string id = args[1];
             string url = args[2];
-            string min = args[3];
-            string max = args[4];
 
             if (!int.TryParse(id, out int id_int))
             {
@@ -229,7 +166,26 @@ namespace PuppetMaster
                 goto InvalidPort;
             }
 
-            ServerURLs[id_int] = url;
+            if(!int.TryParse(args[3], out int min_delay)
+                || !int.TryParse(args[4], out int max_delay)
+                || min_delay <= 0
+                || max_delay <= 0)
+            {
+                this.Form.Error("Server: delay arguments must be positive numbers");
+                return;
+            }
+
+            if (min_delay > max_delay)
+            {
+                this.Form.Error("Server: max_delay must be greater or equal than min_delay");
+                return;
+            }
+
+            if (this.Servers.ContainsKey(id))
+            {
+                this.Form.Error($"Server: server {id} already exists");
+                return;
+            }
 
             PCSGrpcService.PCSGrpcServiceClient grpcClient;
             if (PCSClients.ContainsKey(host))
@@ -261,6 +217,10 @@ namespace PuppetMaster
                 this.Form.Error("Server: failed launching server");
             }
 
+            // register server
+            ServerInfo server = new ServerInfo(id, url);
+            this.Servers[id] = server;
+
             return;
 
         InvalidPort:
@@ -275,23 +235,255 @@ namespace PuppetMaster
             this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
 
-        private void HandleReplicationFactorCommand(string[] args)
+        private void HandlePartitionCommand(string[] args)
         {
-            if (args.Length != 1+1)
+            if (args.Length < 1+3)
             {
-                this.Form.Error("Replication: wrong number of arguments");
-                goto ReplicationUsage;
+                this.Form.Error("Partition: wrong number of arguments");
+                goto PartitionUsage;
+            }
+
+            if(!int.TryParse(args[1], out int replicationFactor) || replicationFactor <= 0)
+            {
+                this.Form.Error("Partition: r must be a positive number");
+                return;
+            }
+
+            // check if replication factor
+            if (this.ReplicationFactor != -1 && replicationFactor != this.ReplicationFactor)
+            {
+                this.Form.Error($"Partition: replication factor already assigned to {this.ReplicationFactor}");
+                return;
+            }
+
+            // even if command fails, set replication factor
+            this.ReplicationFactor = replicationFactor;
+
+            // check number of given servers
+            if (this.ReplicationFactor != args.Length - 3)
+            {
+                this.Form.Error($"Partition: you must supply {this.ReplicationFactor} servers to create this partition");
+                return;
+            }
+
+            // check if unique partition name
+            string partitionName = args[2];
+            if(this.Partitions.ContainsKey(partitionName))
+            {
+                this.Form.Error($"Partition: partition {partitionName} already exists");
+                return;
+            }
+
+            // check if all partition servers exist
+            List<string> servers = new List<string>();
+            bool failed = false;
+            for(int i = 3; i < args.Length; i++)
+            {
+                if(!this.Servers.ContainsKey(args[i]))
+                {
+                    this.Form.Error($"Partition: server {args[i]} does not exist");
+                    failed = true;
+                    continue;
+                }
+                servers.Add(args[i]);
+            }
+            if (failed) return;
+
+            // create partition
+
+            this.Partitions[partitionName] = servers;
+
+            return;
+        PartitionUsage:
+            this.Form.Error("Partition usage: Partition r partition_name server_id_1 ... server_id_r");
+        }
+
+        private void HandleClientCommand(string[] args)
+        {
+            if (args.Length != 1+3)
+            {
+                this.Form.Error("Client: wrong number of arguments");
+                goto ClientUsage;
+            }
+
+            string username = args[1];
+            string url = args[2];
+            string scriptFile = args[3];
+
+            if (this.Clients.ContainsKey(username))
+            {
+                this.Form.Error($"Client: client {username} already exists");
+                return;
+            }
+
+            if (!url.StartsWith("http://"))
+            {
+                goto InvalidURL;
+            }
+            string[] urlElements = url.Replace("http://", "").Split(":", StringSplitOptions.RemoveEmptyEntries);
+            if (urlElements.Length != 2)
+            {
+                this.Form.Error(urlElements.ToString());
+                goto InvalidURL;
+            }
+            string host = urlElements[0];
+            if (!int.TryParse(urlElements[1], out int port))
+            {
+                goto InvalidPort;
+            }
+            if (port < 1 || 65535 < port)
+            {
+                goto InvalidPort;
+            }
+
+            PCSGrpcService.PCSGrpcServiceClient grpcClient;
+            if (PCSClients.ContainsKey(host))
+            {
+                grpcClient = PCSClients[host];
+            }
+            else
+            {
+                try
+                {
+                    string address = "http://" + host + ":" + PCS_PORT;
+                    GrpcChannel channel = GrpcChannel.ForAddress(address);
+                    grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                }
+                catch (Exception)
+                {
+                    this.Form.Error("Client: unable to connect to PCS");
+                    return;
+                }
+            }
+
+            try {
+                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port }).Ok)
+                {
+                    this.Form.Log("Client: successfully launched client at " + host);
+                }
+                else
+                {
+                    this.Form.Error("Client: failed launching client");
+                }
+            }
+            catch (Exception)
+            {
+                this.Form.Error("Client: failed sending request to PCS");
+            }
+
+            // register client
+            ClientInfo client = new ClientInfo(username, url);
+            this.Clients[username] = client;
+
+            return;
+
+        InvalidPort:
+            this.Form.Error("Client: Invalid port number");
+            goto ClientUsage;
+        InvalidURL:
+            this.Form.Error("Client: Invalid URL");
+        ClientUsage:
+            this.Form.Error("Client usage: Client username client_URL script_file");
+        }
+
+        private void HandleStatusCommand(string[] args)
+        {
+            if(args.Length != 1)
+            {
+                this.Form.Error("Status: wrong number of arguments");
+                goto StatusUsage;
             }
 
             return;
-        ReplicationUsage:
-            this.Form.Error("ReplicationFactor usage: ReplicationFactor r");
+        StatusUsage:
+            this.Form.Error("Status usage: Status");
         }
 
-        public void LinkForm(PuppetMasterForm form)
-        { 
-            this.Form = form;
-            this.Form.LinkPuppetMaster(this);
+        private void HandleCrashCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Crash: wrong number of arguments");
+                goto CrashUsage;
+            }
+
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Crash: server {server_id} does not exist");
+                return;
+            }
+
+            // send crash command
+
+            return;
+        CrashUsage:
+            this.Form.Error("Crash usage: Crash server_id");
+        }
+
+        private void HandleFreezeCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Freeze: wrong number of arguments");
+                goto FreezeUsage;
+            }
+
+            string server_id = args[1];
+            if (!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Freeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send freeze command
+
+            return;
+        FreezeUsage:
+            this.Form.Error("Freeze usage: Freeze server_id");
+        }
+
+        private void HandleUnfreezeCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Unfreeze: wrong number of arguments");
+                goto UnfreezeUsage;
+            }
+
+            string server_id = args[1];
+            if(!this.Servers.ContainsKey(server_id))
+            {
+                this.Form.Error($"Unfreeze: server {server_id} does not exist");
+                return;
+            }
+
+            // send unfreeze command
+
+            return;
+        UnfreezeUsage:
+            this.Form.Error("Unfreeze usage: Unreeze server_id");
+        }
+
+        private void HandleWaitCommand(string[] args)
+        {
+            if (args.Length != 1+1)
+            {
+                this.Form.Error("Wait: wrong number of arguments");
+                goto WaitUsage;
+            }
+
+            if(!int.TryParse(args[1], out int x_ms) || x_ms <= 0)
+            {
+                this.Form.Error("Wait: x_mx must be a positive number");
+                return;
+            }
+
+            // maybe disable form input for x_ms ms
+
+            return;
+        WaitUsage:
+            this.Form.Error("Wait usage: Wait x_ms");
         }
     }
 }

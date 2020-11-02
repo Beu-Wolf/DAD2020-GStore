@@ -15,6 +15,7 @@ message LaunchServerReply {
 
 message LaunchClientRequest {
 	string script_file = 1;
+	int32 port = 2;
 }
 
 message LaunchClientReply {

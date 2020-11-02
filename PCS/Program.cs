@@ -18,12 +18,12 @@ namespace PCS
 
         public void LaunchServer(string host, int port)
         {
-            Process.Start(ServerPath, host + " " + port);
+            Process.Start(ServerPath, $"{host} {port}");
         }
 
-        public void LaunchClient(string scriptPath)
+        public void LaunchClient(string host, int port, string scriptPath)
         {
-            Process.Start(ClientPath, scriptPath);
+            Process.Start(ClientPath, $"{host} {port} {scriptPath}");
         }
     }
 
@@ -76,7 +76,7 @@ namespace PCS
 
         public override Task<LaunchClientReply> LaunchClient(LaunchClientRequest request, ServerCallContext context)
         {
-            Pcs.LaunchClient(request.ScriptFile);
+            Pcs.LaunchClient("0.0.0.0", request.Port, request.ScriptFile);
             return Task.FromResult(new LaunchClientReply { Ok = true });
         }
 

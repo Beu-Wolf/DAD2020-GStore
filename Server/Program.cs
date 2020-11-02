@@ -1,8 +1,9 @@
-﻿using System;
+﻿using Grpc.Core;
+using Grpc.Core.Interceptors;
+using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
-using Grpc.Core;
-using Grpc.Net.Client;
 
 namespace Server
 {
@@ -125,33 +126,45 @@ namespace Server
             string host = args[0]; // Maybe pass as parameter when instanciating server
 
             // Dictionary with values
-            Dictionary<ObjectKey, ObjectValueManager> keyValuePairs = new Dictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
+            ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
 
 
             // Dictionary <partition_id, List<URLs>> all servers by partition
-            Dictionary<long, List<string>> ServersByPartition = new Dictionary<long, List<string>>
-            {
-                {1, new List<string> {"http://localhost:10001", "http://localhost:10002"} },
-                {2, new List<string> {"http://localhost:10002"} }
-            };
+            ConcurrentDictionary<long, List<string>> ServersByPartition = new ConcurrentDictionary<long, List<string>>();
+            ServersByPartition.TryAdd(1, new List<string> { "http://localhost:10001", "http://localhost:10002" });
+            ServersByPartition.TryAdd(2, new List<string> { "http://localhost:10002" });
+
+            // List of crashed servers
+            ConcurrentBag<string> CrashedServers = new ConcurrentBag<string>();
 
             // List partition which im master of
             List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 2 };
 
+            // Min and max delays for communication
+            int minDelay = 0;
+            int maxDelay = 100;
+
+            var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
+
             // ReadWriteLock for listMe functions
             var localReadWriteLock = new ReaderWriterLock();
 
-            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions, localReadWriteLock)
+            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions, localReadWriteLock, CrashedServers)
             {
                 MyHost = host,
                 MyPort = Port
             };
 
+            var serverSyncService = new ServerSyncService(keyValuePairs, ServersByPartition, localReadWriteLock, CrashedServers);
+
+            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, MasteredPartitions, CrashedServers, interceptor);
+
             Grpc.Core.Server server = new Grpc.Core.Server
             {
                 Services = { 
-                    ClientServerGrpcService.BindService(clientServerService), 
-                    ServerSyncGrpcService.BindService(new ServerSyncService(keyValuePairs, localReadWriteLock))
+                    ClientServerGrpcService.BindService(clientServerService).Intercept(interceptor), 
+                    ServerSyncGrpcService.BindService(serverSyncService).Intercept(interceptor),
+                    PuppetMasterServerGrpcService.BindService(puppetMasterService)
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };
