@@ -161,7 +161,7 @@ namespace PuppetMaster
             {
                 goto InvalidPort;
             }
-            if (port < 1 || 65535 < port)
+            if (port < 1024 || 65535 < port)
             {
                 goto InvalidPort;
             }
@@ -331,7 +331,7 @@ namespace PuppetMaster
             {
                 goto InvalidPort;
             }
-            if (port < 1 || 65535 < port)
+            if (port < 1024 || 65535 < port)
             {
                 goto InvalidPort;
             }
