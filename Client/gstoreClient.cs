@@ -408,11 +408,6 @@ namespace Client
             
             if (serverId != string.Empty)
             {
-                if (!int.TryParse(serverId, out int serverIdInt))
-                {
-                    Console.WriteLine("Unable to parse arguments");
-                    Environment.Exit(-1);
-                }
                 client.ReadObject(partitionId, objectId, serverId);
             }
             else

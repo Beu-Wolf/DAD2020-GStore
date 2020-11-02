@@ -138,11 +138,6 @@ namespace PuppetMaster
             string id = args[1];
             string url = args[2];
 
-            if (!int.TryParse(id, out int id_int))
-            {
-                goto InvalidId;
-            }
-
             if (!url.StartsWith("http://"))
             {
                 goto InvalidURL;
@@ -227,8 +222,6 @@ namespace PuppetMaster
         InvalidURL:
             this.Form.Error("Server: Invalid URL");
             goto ServerUsage;
-        InvalidId:
-            this.Form.Error("Server: Invalid id");
         ServerUsage:
             this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
