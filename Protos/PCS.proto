@@ -1,0 +1,25 @@
+syntax="proto3";
+
+service PCSGrpcService {
+	rpc LaunchServer (LaunchServerRequest) returns (LaunchServerReply);
+	rpc LaunchClient (LaunchClientRequest) returns (LaunchClientReply);
+}
+
+message LaunchServerRequest {
+	int32 port = 1;
+	int32 min_delay = 2;
+	int32 max_delay = 3;
+}
+
+message LaunchServerReply {
+	bool ok = 1;
+}
+
+message LaunchClientRequest {
+	string script_file = 1;
+	int32 port = 2;
+}
+
+message LaunchClientReply {
+	bool ok = 1;
+}

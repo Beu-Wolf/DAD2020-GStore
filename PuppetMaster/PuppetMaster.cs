@@ -1,13 +1,13 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.IO;
+using System.Collections.Concurrent;
 using System.Threading.Tasks;
+using Grpc.Net.Client;
+using System.Collections.Generic;
 
 namespace PuppetMaster
 {
     public class PuppetMaster
     {
-        private PuppetMasterForm Form;
 
         private readonly struct ServerInfo
         {
@@ -38,13 +38,20 @@ namespace PuppetMaster
         // We need to detect if this value was already assigned
         // Cannot use readonly since will be initialized after the constructor
         private int ReplicationFactor = -1;
-        private Dictionary<string, ServerInfo> Servers = new Dictionary<string, ServerInfo>();
-        private Dictionary<string, ClientInfo> Clients = new Dictionary<string, ClientInfo>();
-        private Dictionary<string, List<string>> Partitions = new Dictionary<string, List<string>>();
+        private ConcurrentDictionary<string, ServerInfo> Servers = new ConcurrentDictionary<string, ServerInfo>();
+        private ConcurrentDictionary<string, ClientInfo> Clients = new ConcurrentDictionary<string, ClientInfo>();
+        private ConcurrentDictionary<string, List<string>> Partitions = new ConcurrentDictionary<string, List<string>>();
+
+        private PuppetMasterForm Form;
+        private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
+            = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
+        private const int PCS_PORT = 10000;
 
 
         public PuppetMaster()
         {
+            AppContext.SetSwitch(
+    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
         }
 
         public void LinkForm(PuppetMasterForm form)
@@ -128,9 +135,34 @@ namespace PuppetMaster
                 this.Form.Error("Server: wrong number of arguments");
                 goto ServerUsage;
             }
+            string id = args[1];
+            string url = args[2];
 
-            string server_id = args[1];
-            string server_url = args[2];
+            if (!int.TryParse(id, out int id_int))
+            {
+                goto InvalidId;
+            }
+
+            if (!url.StartsWith("http://"))
+            {
+                goto InvalidURL;
+            }
+
+            string[] urlElements = url.Replace("http://", "").Split(":", StringSplitOptions.RemoveEmptyEntries);
+            if (urlElements.Length != 2)
+            {
+                this.Form.Error(urlElements.ToString());
+                goto InvalidURL;
+            }
+            string host = urlElements[0];
+            if (!int.TryParse(urlElements[1], out int port))
+            {
+                goto InvalidPort;
+            }
+            if (port < 1024 || 65535 < port)
+            {
+                goto InvalidPort;
+            }
 
             if(!int.TryParse(args[3], out int min_delay)
                 || !int.TryParse(args[4], out int max_delay)
@@ -147,20 +179,56 @@ namespace PuppetMaster
                 return;
             }
 
-
-            if (this.Servers.ContainsKey(server_id))
+            if (this.Servers.ContainsKey(id))
             {
-                this.Form.Error($"Server: server {server_id} already exists");
+                this.Form.Error($"Server: server {id} already exists");
                 return;
             }
 
-            // instantiate server
+            PCSGrpcService.PCSGrpcServiceClient grpcClient;
+            if (PCSClients.ContainsKey(host))
+            {
+                grpcClient = PCSClients[host];
+            }
+            else
+            {
+                string address = "http://" + host + ":" + PCS_PORT;
+                GrpcChannel channel = GrpcChannel.ForAddress(address);
+
+                try
+                {
+                    grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                }
+                catch (Exception)
+                {
+                    this.Form.Error("Server: unable to connect to PCS");
+                    return;
+                }
+            }
+
+            if (grpcClient.LaunchServer(new LaunchServerRequest { Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
+            {
+                this.Form.Log("Server: successfully launched server at " + host + ":" + port);
+            }
+            else
+            {
+                this.Form.Error("Server: failed launching server");
+            }
 
             // register server
-            ServerInfo server = new ServerInfo(server_id, server_url);
-            this.Servers[server_id] = server;
+            ServerInfo server = new ServerInfo(id, url);
+            this.Servers[id] = server;
 
             return;
+
+        InvalidPort:
+            this.Form.Error("Server: Invalid port number");
+            goto ServerUsage;
+        InvalidURL:
+            this.Form.Error("Server: Invalid URL");
+            goto ServerUsage;
+        InvalidId:
+            this.Form.Error("Server: Invalid id");
         ServerUsage:
             this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
@@ -237,8 +305,8 @@ namespace PuppetMaster
             }
 
             string username = args[1];
-            string client_url = args[2];
-
+            string url = args[2];
+            string scriptFile = args[3];
 
             if (this.Clients.ContainsKey(username))
             {
@@ -246,14 +314,72 @@ namespace PuppetMaster
                 return;
             }
 
-            // instantiate client
+            if (!url.StartsWith("http://"))
+            {
+                goto InvalidURL;
+            }
+            string[] urlElements = url.Replace("http://", "").Split(":", StringSplitOptions.RemoveEmptyEntries);
+            if (urlElements.Length != 2)
+            {
+                this.Form.Error(urlElements.ToString());
+                goto InvalidURL;
+            }
+            string host = urlElements[0];
+            if (!int.TryParse(urlElements[1], out int port))
+            {
+                goto InvalidPort;
+            }
+            if (port < 1024 || 65535 < port)
+            {
+                goto InvalidPort;
+            }
+
+            PCSGrpcService.PCSGrpcServiceClient grpcClient;
+            if (PCSClients.ContainsKey(host))
+            {
+                grpcClient = PCSClients[host];
+            }
+            else
+            {
+                try
+                {
+                    string address = "http://" + host + ":" + PCS_PORT;
+                    GrpcChannel channel = GrpcChannel.ForAddress(address);
+                    grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                }
+                catch (Exception)
+                {
+                    this.Form.Error("Client: unable to connect to PCS");
+                    return;
+                }
+            }
+
+            try {
+                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port }).Ok)
+                {
+                    this.Form.Log("Client: successfully launched client at " + host);
+                }
+                else
+                {
+                    this.Form.Error("Client: failed launching client");
+                }
+            }
+            catch (Exception)
+            {
+                this.Form.Error("Client: failed sending request to PCS");
+            }
 
             // register client
-            ClientInfo client = new ClientInfo(username, client_url);
+            ClientInfo client = new ClientInfo(username, url);
             this.Clients[username] = client;
 
-
             return;
+
+        InvalidPort:
+            this.Form.Error("Client: Invalid port number");
+            goto ClientUsage;
+        InvalidURL:
+            this.Form.Error("Client: Invalid URL");
         ClientUsage:
             this.Form.Error("Client usage: Client username client_URL script_file");
         }
