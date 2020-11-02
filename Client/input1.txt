@@ -1,6 +1,6 @@
 begin-repeat 2
-write $i $i "value-$i"
-read $i $i $i
+write part-$i $i "value-$i"
+read part-$i $i $i
 end-repeat
 listServer 1
 listGlobal

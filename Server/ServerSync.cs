@@ -17,12 +17,12 @@ namespace Server
         private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
 
 
-        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<string, List<string>> ServersByPartition;
         private readonly ConcurrentBag<string> CrashedServers;
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        public ServerSyncService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
+        public ServerSyncService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartition, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             LocalReadWriteLock = readerWriterLock;

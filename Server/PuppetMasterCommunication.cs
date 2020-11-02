@@ -14,14 +14,14 @@ namespace Server
         public string MyHost { get; set; }
 
 
-        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<string, List<string>> ServersByPartition;
         private readonly ConcurrentBag<string> CrashedServers;
-        private readonly List<long> MasteredPartitions;
+        private readonly List<string> MasteredPartitions;
 
         private readonly DelayMessagesInterceptor Interceptor;
 
-        public PuppetMasterServerService(ConcurrentDictionary<long, List<string>> serversByPartitions,
-            List<long> masteredPartitions, ConcurrentBag<string> crashedServers, DelayMessagesInterceptor interceptor)
+        public PuppetMasterServerService(ConcurrentDictionary<string, List<string>> serversByPartitions,
+            List<string> masteredPartitions, ConcurrentBag<string> crashedServers, DelayMessagesInterceptor interceptor)
         {
             ServersByPartition = serversByPartitions;
             MasteredPartitions = masteredPartitions;

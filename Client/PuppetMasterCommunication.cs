@@ -2,21 +2,60 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Client
 {
     class PuppetMasterCommunicationService : PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceBase
     {
-        private readonly ConcurrentDictionary<long, List<int>> ServersIdByPartition;
-        private readonly ConcurrentBag<int> CrashedServers;
+        private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
+        private readonly ConcurrentDictionary<string, string> ServerUrls;
+        private readonly ConcurrentBag<string> CrashedServers;
+        private readonly object WaitForInformationLock;
+        BoolWrapper ContinueExecution;
 
-        public PuppetMasterCommunicationService(ConcurrentDictionary<long, List<int>> serversIdByPartition, ConcurrentBag<int> crashedServers)
+        public PuppetMasterCommunicationService(ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers,
+            object waitForInformationLock, BoolWrapper continueExecution)
         {
             ServersIdByPartition = serversIdByPartition;
+            ServerUrls = serverUrls;
             CrashedServers = crashedServers;
+            WaitForInformationLock = waitForInformationLock;
+            ContinueExecution = continueExecution;
         }
+
+        public override Task<NetworkInformationReply> NetworkInformation(NetworkInformationRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(NetworkInfo(request));
+        }
+
+        public NetworkInformationReply NetworkInfo(NetworkInformationRequest request)
+        {
+            foreach (var serverUrl in request.ServerUrls)
+            {
+                if(!ServerUrls.TryAdd(serverUrl.Key, serverUrl.Value)) 
+                {
+                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                }
+            }
+            foreach (var partition in request.ServerIdsByPartition)
+            {
+                if(!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
+                {
+                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                }
+            }
+            lock(WaitForInformationLock)
+            {
+                ContinueExecution.Value = true;
+                Monitor.PulseAll(WaitForInformationLock);
+            }
+            return new NetworkInformationReply();
+        }
+
 
         public override Task<StatusReply> Status(StatusRequest request, ServerCallContext context)
         {

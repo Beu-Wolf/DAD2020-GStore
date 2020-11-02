@@ -21,15 +21,15 @@ namespace Server
         private readonly ReaderWriterLock LocalReadWriteLock;
 
         private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
-        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
-        private readonly List<long> MasteredPartitions;
+        private readonly ConcurrentDictionary<string, List<string>> ServersByPartition;
+        private readonly List<string> MasteredPartitions;
         private readonly ConcurrentBag<string> CrashedServers;
 
 
         public ClientServerService() {}
 
-        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartitions,
-            List<long> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
+        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartitions,
+            List<string> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
@@ -38,7 +38,7 @@ namespace Server
             CrashedServers = crashedServers;
         }
 
-        private void UpdateCrashedServers(long partition, HashSet<string> crashedServers)
+        private void UpdateCrashedServers(string partition, HashSet<string> crashedServers)
         {
             CrashedServers.Union(crashedServers);
 

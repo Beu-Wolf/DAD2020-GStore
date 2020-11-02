@@ -9,6 +9,12 @@ using System.Collections.Concurrent;
 namespace Client
 {
 
+    public class BoolWrapper
+    {
+        public bool Value { get; set; }
+        public BoolWrapper(bool value) { Value = value; }
+    }
+
     public class GSTOREClient
     {
         // Mapping of partitions and masters
@@ -17,14 +23,14 @@ namespace Client
         private GrpcChannel Channel { get; set; }
         private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
 
-        private readonly ConcurrentDictionary<long, List<int>> ServersIdByPartition;
-        private readonly ConcurrentDictionary<int, string> ServerUrls;
-        private readonly ConcurrentBag<int> CrashedServers;
-        private int currentServerId;
+        private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
+        private readonly ConcurrentDictionary<string, string> ServerUrls;
+        private readonly ConcurrentBag<string> CrashedServers;
+        private string currentServerId;
 
 
 
-        public GSTOREClient(ConcurrentDictionary<long, List<int>> serversIdByPartition, ConcurrentDictionary<int, string> serverUrls, ConcurrentBag<int> crashedServers)
+        public GSTOREClient(ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers)
         {
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
@@ -39,7 +45,7 @@ namespace Client
             Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
         }
 
-        public bool TryChangeCommunicationChannel(int server_id)
+        public bool TryChangeCommunicationChannel(string server_id)
         {
             Console.WriteLine("Trying to connect to " + server_id);
             try
@@ -55,7 +61,7 @@ namespace Client
             }
         }
 
-        public void ReadObject(int partition_id, int object_id, int server_id)
+        public void ReadObject(string partition_id, string object_id, string server_id)
         {
             // Check if connected Server has requested partition
 
@@ -67,7 +73,7 @@ namespace Client
 
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
             {
-                if (server_id == -1)
+                if (server_id == "-1")
                 {
                     // Not connected to correct partition, and no optional server stated, connect to random server from partition
                     Random rnd = new Random();
@@ -105,11 +111,11 @@ namespace Client
             }
         }
 
-        public void WriteObject(int partition_id, int object_id, string value)
+        public void WriteObject(string partition_id, string object_id, string value)
         {
 
             int currentServerPartitionIndex;
-            List<int> ServersOfPartition = ServersIdByPartition[partition_id];
+            List<string> ServersOfPartition = ServersIdByPartition[partition_id];
 
             if (ServersOfPartition.Count == 0)
             {
@@ -139,7 +145,7 @@ namespace Client
                 },
                 Value = value
             };
-            var crashedServers = new ConcurrentBag<int>();
+            var crashedServers = new ConcurrentBag<string>();
             while (!success && numTries < ServersOfPartition.Count)
             {
                 try
@@ -186,7 +192,7 @@ namespace Client
             }
         }
 
-        public void ListServer(int server_id)
+        public void ListServer(string server_id)
         {
             if (currentServerId != server_id)
             {
@@ -286,29 +292,38 @@ namespace Client
 
             string host = args[0];
 
-            var serverIdsByPartition = new ConcurrentDictionary<long, List<int>>();
-            serverIdsByPartition.TryAdd(1, new List<int> { 1, 2 });
-            serverIdsByPartition.TryAdd(2, new List<int> { 2 });
+            var serverIdsByPartition = new ConcurrentDictionary<string, List<string>>();
+            serverIdsByPartition.TryAdd("part-1", new List<string> { "1", "2" });
+            serverIdsByPartition.TryAdd("part-2", new List<string> { "2" });
 
-            var serverUrls = new ConcurrentDictionary<int, string>();
-            serverUrls.TryAdd(1, "http://localhost:10001");
-            serverUrls.TryAdd(2, "http://localhost:10002");
+            var serverUrls = new ConcurrentDictionary<string, string>();
+            serverUrls.TryAdd("1", "http://localhost:10001");
+            serverUrls.TryAdd("2", "http://localhost:10002");
 
-            var crashedServers = new ConcurrentBag<int>();
+            var crashedServers = new ConcurrentBag<string>();
 
             var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
+
+            object waitForInformationLock = new object();
+            BoolWrapper continueExecution = new BoolWrapper(false);
 
             var server = new Grpc.Core.Server
             {
                 Services =
                 {
-                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, crashedServers))
+                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, serverUrls, crashedServers, waitForInformationLock, continueExecution))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
 
             };
 
             server.Start();
+
+            // Lock until information is received
+            lock(waitForInformationLock)
+            {
+                while (!continueExecution.Value) Monitor.Wait(waitForInformationLock);
+            }
 
             try {
                     string line;
@@ -390,26 +405,21 @@ namespace Client
             Console.WriteLine("read " + partitionId + " " + objectId + " " + serverId);
 
 
-            if (int.TryParse(partitionId, out int partitionIdInt) && int.TryParse(objectId, out int objectIdInt))
+            
+            if (serverId != string.Empty)
             {
-                if (serverId != string.Empty)
+                if (!int.TryParse(serverId, out int serverIdInt))
                 {
-                    if (!int.TryParse(serverId, out int serverIdInt))
-                    {
-                        Console.WriteLine("Unable to parse arguments");
-                        Environment.Exit(-1);
-                    }
-                    client.ReadObject(partitionIdInt, objectIdInt, serverIdInt);
+                    Console.WriteLine("Unable to parse arguments");
+                    Environment.Exit(-1);
                 }
-                else
-                {
-                    client.ReadObject(partitionIdInt, objectIdInt, -1);
-                }
-            } else
-            {
-                Console.WriteLine("Unable to parse arguments");
-                Environment.Exit(-1);
+                client.ReadObject(partitionId, objectId, serverId);
             }
+            else
+            {
+                client.ReadObject(partitionId, objectId, "-1");
+            }
+            
            
         }
         static void Handle_write(string[] cmd, GSTOREClient client) {
@@ -426,14 +436,9 @@ namespace Client
             // Console.WriteLine($"write {partitionId} {objectId} {value}");
             Console.WriteLine("write " + partitionId + " " + objectId + " " + value);
 
-            if (int.TryParse(partitionId, out int partitionIdInt) && int.TryParse(objectId, out int objectIdInt))
-            {
-                client.WriteObject(partitionIdInt, objectIdInt, value);
-            } else
-            {
-                Console.WriteLine("Unable to parse arguments");
-                Environment.Exit(-1);
-            }      
+            
+            client.WriteObject(partitionId, objectId, value);
+                 
         }
         static void Handle_listServer(string[] cmd, GSTOREClient client) {
             if (cmd.Length != 2) {
@@ -447,14 +452,8 @@ namespace Client
             // Console.WriteLine($"listServer {serverId}");
             Console.WriteLine("listServer " + serverId);
 
-            if(int.TryParse(serverId, out int serverIdInt))
-            {
-                client.ListServer(serverIdInt);
-            } else
-            {
-                Console.WriteLine("Unable to parse server id");
-                Environment.Exit(-1);
-            }
+            client.ListServer(serverId);
+            
         }
         static void Handle_listGlobal(string[] cmd, GSTOREClient client) {
             if (cmd.Length != 1) {
