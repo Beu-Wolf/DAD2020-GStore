@@ -45,8 +45,6 @@ namespace PuppetMaster
         private PuppetMasterForm Form;
         private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
             = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
-        private ConcurrentDictionary<int, string> ServerURLs
-            = new ConcurrentDictionary<int, string>();
         private const int PCS_PORT = 10000;
 
 
