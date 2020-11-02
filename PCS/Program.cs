@@ -18,12 +18,16 @@ namespace PCS
 
         public void LaunchServer(string host, int port)
         {
-            Process.Start(ServerPath, $"{host} {port}");
+            var psi = new ProcessStartInfo(ServerPath, $"{host} {port}");
+            psi.UseShellExecute = true;
+            Process.Start(psi);
         }
 
         public void LaunchClient(string host, int port, string scriptPath)
         {
-            Process.Start(ClientPath, $"{host} {port} {scriptPath}");
+            var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath}");
+            psi.UseShellExecute = true;
+            Process.Start(psi);
         }
     }
 
