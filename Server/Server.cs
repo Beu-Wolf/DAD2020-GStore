@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -19,16 +20,16 @@ namespace Server
 
         private readonly ReaderWriterLock LocalReadWriteLock;
 
-        private readonly Dictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
-        private readonly Dictionary<long, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+        private readonly ConcurrentDictionary<long, List<string>> ServersByPartition;
         private readonly List<long> MasteredPartitions;
-        private readonly HashSet<string> CrashedServers;
+        private readonly ConcurrentBag<string> CrashedServers;
 
 
         public ClientServerService() {}
 
-        public ClientServerService(Dictionary<ObjectKey, ObjectValueManager> keyValuePairs, Dictionary<long, List<string>> serversByPartitions,
-            List<long> masteredPartitions, ReaderWriterLock readerWriterLock, HashSet<string> crashedServers)
+        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<long, List<string>> serversByPartitions,
+            List<long> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
@@ -39,7 +40,7 @@ namespace Server
 
         private void UpdateCrashedServers(long partition, HashSet<string> crashedServers)
         {
-            CrashedServers.UnionWith(crashedServers);
+            CrashedServers.Union(crashedServers);
 
             ServersByPartition[partition].RemoveAll(x => crashedServers.Contains(x));
         }
@@ -129,9 +130,10 @@ namespace Server
                         } catch (RpcException e)
                         {
                             // If grpc does no respond, we can assume it has crashed
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable)
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
                                 // Add Url to hash Set
+                                Console.WriteLine($"Server {serverUrl} has crashed");
                                 connectionCrashedServers.Add(serverUrl);
                             } 
                             else
@@ -140,7 +142,6 @@ namespace Server
                             }
                         }
                     }
-                    
 
                     foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
                     {
@@ -158,7 +159,7 @@ namespace Server
                         }
                         catch (RpcException e)
                         {
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable)
+                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
                                 // Add Url to hash Set
                                 connectionCrashedServers.Add(serverUrl);

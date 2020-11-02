@@ -1,0 +1,12 @@
+syntax="proto3";
+
+service PuppetMasterClientGrpcService {
+	rpc Status (StatusRequest) returns (StatusReply);
+}
+
+message StatusRequest {
+
+}
+
+message StatusReply {
+}
