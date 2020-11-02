@@ -208,7 +208,7 @@ namespace PuppetMaster
                 }
             }
 
-            if (grpcClient.LaunchServer(new LaunchServerRequest { Port = port }).Ok)
+            if (grpcClient.LaunchServer(new LaunchServerRequest { Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
             {
                 this.Form.Log("Server: successfully launched server at " + host + ":" + port);
             }

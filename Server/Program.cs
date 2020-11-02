@@ -107,16 +107,32 @@ namespace Server
 
         static void Main(string[] args)
         {
-            if (args.Length != 2)
+            if (args.Length != 4)
             {
-                Console.WriteLine("Usage: Server.exe host port");
+                Console.WriteLine("Usage: Server.exe host port min_delay max_delay");
                 return;
             }
 
 
-            if(!int.TryParse(args[1], out int Port))
+            if (!int.TryParse(args[1], out int Port))
             {
                 Console.WriteLine("Invalid port value");
+                return;
+            }
+
+            if (!int.TryParse(args[2], out int minDelay)) {
+                Console.WriteLine("Invalid min delay");
+                return;
+            }
+
+            if (!int.TryParse(args[3], out int maxDelay)) {
+                Console.WriteLine("Invalid max delay");
+                return;
+            }
+
+            if (minDelay > maxDelay)
+            {
+                Console.WriteLine("Max delay must be greater of equal than min delay");
                 return;
             }
 
@@ -139,10 +155,6 @@ namespace Server
 
             // List partition which im master of
             List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 2 };
-
-            // Min and max delays for communication
-            int minDelay = 0;
-            int maxDelay = 100;
 
             var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
 
