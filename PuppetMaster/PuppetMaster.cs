@@ -195,6 +195,7 @@ namespace PuppetMaster
                 try
                 {
                     grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                    PCSClients[host] = grpcClient;
                 }
                 catch (Exception)
                 {
