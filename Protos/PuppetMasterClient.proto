@@ -2,6 +2,21 @@ syntax="proto3";
 
 service PuppetMasterClientGrpcService {
 	rpc Status (StatusRequest) returns (StatusReply);
+	rpc NetworkInformation (NetworkInformationRequest) returns (NetworkInformationReply);
+}
+
+
+message PartitionServers {
+	repeated string serverIds = 1;
+}
+
+message NetworkInformationRequest {
+	map<string, PartitionServers> serverIdsByPartition = 1;
+	map<string, string> serverUrls = 2;
+}
+
+message NetworkInformationReply {
+
 }
 
 message StatusRequest {

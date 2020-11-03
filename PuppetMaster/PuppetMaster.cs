@@ -11,8 +11,8 @@ namespace PuppetMaster
 
         private readonly struct ServerInfo
         {
-            private readonly string Id { get; }
-            private readonly string Url { get; }
+            internal string Id { get; }
+            internal string Url { get; }
             // will have gRPC handles in the future
 
             internal ServerInfo(string id, string url)
@@ -24,8 +24,8 @@ namespace PuppetMaster
 
         private readonly struct ClientInfo
         {
-            private readonly string Username { get; }
-            private readonly string Url { get; }
+            internal string Username { get; }
+            internal string Url { get; }
             // will have gRPC handles in the future
 
             internal ClientInfo(string username, string url)
@@ -138,11 +138,6 @@ namespace PuppetMaster
             string id = args[1];
             string url = args[2];
 
-            if (!int.TryParse(id, out int id_int))
-            {
-                goto InvalidId;
-            }
-
             if (!url.StartsWith("http://"))
             {
                 goto InvalidURL;
@@ -227,8 +222,6 @@ namespace PuppetMaster
         InvalidURL:
             this.Form.Error("Server: Invalid URL");
             goto ServerUsage;
-        InvalidId:
-            this.Form.Error("Server: Invalid id");
         ServerUsage:
             this.Form.Error("Server usage: Server server_id URL min_delay max_delay");
         }
@@ -482,6 +475,27 @@ namespace PuppetMaster
             return;
         WaitUsage:
             this.Form.Error("Wait usage: Wait x_ms");
+        }
+
+        private void SendInformationToClient(ConcurrentDictionary<string, List<string>> serverIdsByPartitionCopy, ConcurrentDictionary<string, ServerInfo> serverUrlsCopy, ClientInfo client)
+        {
+            GrpcChannel channel = GrpcChannel.ForAddress(client.Url);
+            var grpcClient = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(channel);
+
+            var request = new NetworkInformationRequest();
+            foreach (var serverIds in serverIdsByPartitionCopy)
+            {
+                request.ServerIdsByPartition.Add(serverIds.Key, new PartitionServers
+                {
+                    ServerIds = { serverIds.Value }
+                });
+            }
+            foreach (var serverUrl in serverUrlsCopy)
+            {
+                request.ServerUrls.Add(serverUrl.Key, serverUrl.Value.Url);
+            }
+
+            grpcClient.NetworkInformation(request);
         }
     }
 }

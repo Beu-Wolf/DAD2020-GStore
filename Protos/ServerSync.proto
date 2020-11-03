@@ -27,7 +27,7 @@ message ReleaseObjectLockReply {
 }
 
 message RemoveCrashedServersRequest {
-	int64 partition_id = 1;
+	string partition_id = 1;
 	repeated string serverUrls = 2;
 }
 

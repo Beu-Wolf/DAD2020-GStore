@@ -10,11 +10,11 @@ namespace Server
 
     public class ObjectKey
     {
-        public long Partition_id { get; private set; }
+        public string Partition_id { get; private set; }
 
-        public long Object_id { get; private set; }
+        public string Object_id { get; private set; }
 
-        public ObjectKey(long partition_id, long object_id)
+        public ObjectKey(string partition_id, string object_id)
         {
             Partition_id = partition_id;
             Object_id = object_id;
@@ -146,15 +146,15 @@ namespace Server
 
 
             // Dictionary <partition_id, List<URLs>> all servers by partition
-            ConcurrentDictionary<long, List<string>> ServersByPartition = new ConcurrentDictionary<long, List<string>>();
-            ServersByPartition.TryAdd(1, new List<string> { "http://localhost:10001", "http://localhost:10002" });
-            ServersByPartition.TryAdd(2, new List<string> { "http://localhost:10002" });
+            ConcurrentDictionary<string, List<string>> ServersByPartition = new ConcurrentDictionary<string, List<string>>();
+            ServersByPartition.TryAdd("part-1", new List<string> { "http://localhost:10001", "http://localhost:10002" });
+            ServersByPartition.TryAdd("part-2", new List<string> { "http://localhost:10002" });
 
             // List of crashed servers
             ConcurrentBag<string> CrashedServers = new ConcurrentBag<string>();
 
             // List partition which im master of
-            List<long> MasteredPartitions = new List<long> { Port == 10001 ? 1 : 2 };
+            List<string> MasteredPartitions = new List<string> { Port == 10001 ? "part-1" : "part-2" };
 
             var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
 
