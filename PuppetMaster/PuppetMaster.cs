@@ -11,14 +11,15 @@ namespace PuppetMaster
 
         private readonly struct ServerInfo
         {
-            internal string Id { get; }
-            internal string Url { get; }
-            // will have gRPC handles in the future
+            internal readonly string Id { get; }
+            internal readonly string Url { get; }
+            internal readonly PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient Grpc { get; }
 
-            internal ServerInfo(string id, string url)
+            internal ServerInfo(string id, string url, PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient grpc)
             {
                 Id = id;
                 Url = url;
+                Grpc = grpc;
             }
         }
 
@@ -211,7 +212,9 @@ namespace PuppetMaster
             }
 
             // register server
-            ServerInfo server = new ServerInfo(id, url);
+            GrpcChannel serverChannel = GrpcChannel.ForAddress(url);
+            var serverGrpc = new PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient(serverChannel);
+            ServerInfo server = new ServerInfo(id, url, serverGrpc);
             this.Servers[id] = server;
 
             return;
@@ -405,7 +408,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send crash command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Crash(new CrashRequest());
 
             return;
         CrashUsage:
@@ -427,7 +431,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send freeze command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Freeze(new FreezeRequest());
 
             return;
         FreezeUsage:
@@ -449,7 +454,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send unfreeze command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Unfreeze(new UnfreezeRequest());
 
             return;
         UnfreezeUsage:
