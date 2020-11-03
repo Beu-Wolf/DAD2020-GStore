@@ -1,7 +1,7 @@
 syntax="proto3";
 
 service PuppetMasterClientGrpcService {
-	rpc Status (StatusRequest) returns (StatusReply);
+	rpc Status (ClientStatusRequest) returns (ClientStatusReply);
 	rpc NetworkInformation (NetworkInformationRequest) returns (NetworkInformationReply);
 }
 
@@ -19,9 +19,9 @@ message NetworkInformationReply {
 
 }
 
-message StatusRequest {
+message ClientStatusRequest {
 
 }
 
-message StatusReply {
+message ClientStatusReply {
 }

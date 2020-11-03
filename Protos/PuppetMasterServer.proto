@@ -1,17 +1,17 @@
 syntax="proto3";
 
 service PuppetMasterServerGrpcService {
-	rpc Status (StatusRequest) returns (StatusReply);
+	rpc Status (ServerStatusRequest) returns (ServerStatusReply);
 	rpc Crash (CrashRequest) returns (CrashReply);
 	rpc Freeze (FreezeRequest) returns (FreezeReply);
 	rpc Unfreeze (UnfreezeRequest) returns (UnfreezeReply);
 }
 
-message StatusRequest {
+message ServerStatusRequest {
 
 }
 
-message StatusReply {
+message ServerStatusReply {
 	bool success = 1;
 }
 

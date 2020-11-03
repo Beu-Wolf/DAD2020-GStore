@@ -55,12 +55,12 @@ namespace Client
         }
 
 
-        public override Task<StatusReply> Status(StatusRequest request, ServerCallContext context)
+        public override Task<ClientStatusReply> Status(ClientStatusRequest request, ServerCallContext context)
         {
             return Task.FromResult(ClientStatus());
         }
 
-        public StatusReply ClientStatus()
+        public ClientStatusReply ClientStatus()
         {
             Console.WriteLine("Online Servers");
             foreach (var server in ServersIdByPartition)
@@ -72,7 +72,7 @@ namespace Client
             {
                 Console.WriteLine($"Server {server}");
             }
-            return new StatusReply();
+            return new ClientStatusReply();
         }
 
     }
