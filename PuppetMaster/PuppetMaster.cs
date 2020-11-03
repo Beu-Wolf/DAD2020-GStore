@@ -25,14 +25,15 @@ namespace PuppetMaster
 
         private readonly struct ClientInfo
         {
-            internal string Username { get; }
-            internal string Url { get; }
-            // will have gRPC handles in the future
+            internal readonly string Username { get; }
+            internal readonly string Url { get; }
+            internal readonly PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient Grpc { get; }
 
-            internal ClientInfo(string username, string url)
+            internal ClientInfo(string username, string url, PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient grpc)
             {
                 Username = username;
                 Url = url;
+                Grpc = grpc;
             }
         }
 
@@ -366,7 +367,9 @@ namespace PuppetMaster
             }
 
             // register client
-            ClientInfo client = new ClientInfo(username, url);
+            GrpcChannel clientChannel = GrpcChannel.ForAddress(url);
+            var clientGrpc = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(clientChannel);
+            ClientInfo client = new ClientInfo(username, url, clientGrpc);
             this.Clients[username] = client;
 
             return;
@@ -485,8 +488,7 @@ namespace PuppetMaster
 
         private void SendInformationToClient(ConcurrentDictionary<string, List<string>> serverIdsByPartitionCopy, ConcurrentDictionary<string, ServerInfo> serverUrlsCopy, ClientInfo client)
         {
-            GrpcChannel channel = GrpcChannel.ForAddress(client.Url);
-            var grpcClient = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(channel);
+            var grpcClient = client.Grpc;
 
             var request = new NetworkInformationRequest();
             foreach (var serverIds in serverIdsByPartitionCopy)
