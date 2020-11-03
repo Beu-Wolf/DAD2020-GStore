@@ -14,16 +14,14 @@ namespace Client
         private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
         private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly ConcurrentBag<string> CrashedServers;
-        private readonly object WaitForInformationLock;
         BoolWrapper ContinueExecution;
 
-        public PuppetMasterCommunicationService(ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers,
-            object waitForInformationLock, BoolWrapper continueExecution)
+        public PuppetMasterCommunicationService(ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, 
+            ConcurrentBag<string> crashedServers, BoolWrapper continueExecution)
         {
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
             CrashedServers = crashedServers;
-            WaitForInformationLock = waitForInformationLock;
             ContinueExecution = continueExecution;
         }
 
@@ -48,10 +46,10 @@ namespace Client
                     throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
                 }
             }
-            lock(WaitForInformationLock)
+            lock(ContinueExecution.WaitForInformationLock)
             {
                 ContinueExecution.Value = true;
-                Monitor.PulseAll(WaitForInformationLock);
+                Monitor.PulseAll(ContinueExecution.WaitForInformationLock);
             }
             return new NetworkInformationReply();
         }

@@ -11,8 +11,13 @@ namespace Client
 
     public class BoolWrapper
     {
+        public object WaitForInformationLock { get; }
         public bool Value { get; set; }
-        public BoolWrapper(bool value) { Value = value; }
+        public BoolWrapper(bool value) 
+        { 
+            Value = value;
+            WaitForInformationLock = new object();
+        }
     }
 
     public class GSTOREClient
@@ -304,14 +309,13 @@ namespace Client
 
             var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
 
-            object waitForInformationLock = new object();
             BoolWrapper continueExecution = new BoolWrapper(false);
 
             var server = new Grpc.Core.Server
             {
                 Services =
                 {
-                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, serverUrls, crashedServers, waitForInformationLock, continueExecution))
+                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, serverUrls, crashedServers, continueExecution))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
 
@@ -320,9 +324,9 @@ namespace Client
             server.Start();
 
             // Lock until information is received
-            lock(waitForInformationLock)
+            lock(continueExecution.WaitForInformationLock)
             {
-                while (!continueExecution.Value) Monitor.Wait(waitForInformationLock);
+                while (!continueExecution.Value) Monitor.Wait(continueExecution.WaitForInformationLock);
             }
 
             try {
