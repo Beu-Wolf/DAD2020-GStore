@@ -392,6 +392,17 @@ namespace PuppetMaster
                 goto StatusUsage;
             }
 
+            foreach (var server in this.Servers.Values)
+            {
+                server.Grpc.Status(new ServerStatusRequest());
+            }
+
+            foreach (var client in this.Clients.Values)
+            {
+                client.Grpc.Status(new ClientStatusRequest());
+            }
+
+
             return;
         StatusUsage:
             this.Form.Error("Status usage: Status");
