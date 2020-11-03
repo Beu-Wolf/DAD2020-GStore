@@ -163,10 +163,10 @@ namespace PuppetMaster
 
             if(!int.TryParse(args[3], out int min_delay)
                 || !int.TryParse(args[4], out int max_delay)
-                || min_delay <= 0
-                || max_delay <= 0)
+                || min_delay < 0
+                || max_delay < 0)
             {
-                this.Form.Error("Server: delay arguments must be positive numbers");
+                this.Form.Error("Server: delay arguments must be non negative numbers");
                 return;
             }
 
