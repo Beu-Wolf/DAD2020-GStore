@@ -27,7 +27,6 @@ namespace Server
             MasteredPartitions = masteredPartitions;
             CrashedServers = crashedServers;
             Interceptor = interceptor;
-
         }
 
         public override Task<CrashReply> Crash(CrashRequest request, ServerCallContext context)
@@ -91,5 +90,15 @@ namespace Server
             };
         }
 
+        public override Task<PartitionSchemaReply> PartitionSchema(PartitionSchemaRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(PartitionSchemaMe(request));
+        }
+
+        public PartitionSchemaReply PartitionSchemaMe(PartitionSchemaRequest request)
+        {
+            Console.WriteLine("Received partition schema!");
+            return new PartitionSchemaReply();
+        }
     }
 }

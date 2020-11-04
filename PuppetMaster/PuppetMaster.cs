@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Grpc.Net.Client;
 using System.Collections.Generic;
+using System.Security.Policy;
 
 namespace PuppetMaster
 {
@@ -521,6 +522,37 @@ namespace PuppetMaster
             }
 
             grpcClient.NetworkInformation(request);
+        }
+    
+        private void SendInformationToServer(string server_id)
+        {
+            var serverGrpc = this.Servers[server_id].Grpc;
+
+            var request = new PartitionSchemaRequest();
+            List<string> mastered = new List<string>();
+            foreach (var entry in this.Partitions)
+            {
+                request.PartitionServers[entry.Key] = new PartitionInfo
+                {
+                    ServerIds = { entry.Value }
+                };
+                if(entry.Value[0] == server_id)
+                { // server master of this partition
+                    mastered.Add(entry.Key);
+                }
+            }
+
+            foreach (var server in this.Servers.Values)
+            {
+                request.ServerUrls[server.Id] = server.Url;
+            }
+
+            request.MasteredPartitions = new MasteredInfo
+            {
+                PartitionIds = { mastered }
+            };
+
+            serverGrpc.PartitionSchema(request);
         }
     }
 }
