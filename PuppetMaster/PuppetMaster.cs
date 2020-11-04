@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Grpc.Net.Client;
 using System.Collections.Generic;
 using System.Security.Policy;
+using System.Linq;
 
 namespace PuppetMaster
 {
@@ -206,7 +207,7 @@ namespace PuppetMaster
                 }
             }
 
-            if (grpcClient.LaunchServer(new LaunchServerRequest { Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
+            if (grpcClient.LaunchServer(new LaunchServerRequest { Id = id, Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
             {
                 this.Form.Log("Server: successfully launched server at " + host + ":" + port);
             }

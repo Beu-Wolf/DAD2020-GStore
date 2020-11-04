@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -15,15 +16,17 @@ namespace Server
 
 
         private readonly ConcurrentDictionary<string, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly ConcurrentBag<string> CrashedServers;
         private readonly List<string> MasteredPartitions;
 
         private readonly DelayMessagesInterceptor Interceptor;
 
-        public PuppetMasterServerService(ConcurrentDictionary<string, List<string>> serversByPartitions,
+        public PuppetMasterServerService(ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
             List<string> masteredPartitions, ConcurrentBag<string> crashedServers, DelayMessagesInterceptor interceptor)
         {
             ServersByPartition = serversByPartitions;
+            ServerUrls = serverUrls;
             MasteredPartitions = masteredPartitions;
             CrashedServers = crashedServers;
             Interceptor = interceptor;
@@ -77,7 +80,9 @@ namespace Server
             Console.WriteLine("Online Servers");
             foreach (var server in ServersByPartition)
             {
-                Console.WriteLine($"Server {server.Value} from partition {server.Key}");
+                Console.Write("Servers ");
+                server.Value.ForEach(x => Console.Write(x + " "));
+                Console.Write($"from partition {server.Key}\r\n");
             }
             Console.WriteLine("Crashed Servers");
             foreach (var server in CrashedServers)
@@ -97,7 +102,27 @@ namespace Server
 
         public PartitionSchemaReply PartitionSchemaMe(PartitionSchemaRequest request)
         {
-            Console.WriteLine("Received partition schema!");
+            foreach (var partitionDetails in request.PartitionServers)
+            {
+                if(!ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
+                {
+                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                }
+            }
+
+            foreach (var serverUrl in request.ServerUrls)
+            {
+                if(!ServerUrls.TryAdd(serverUrl.Key, serverUrl.Value))
+                {
+                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                }
+            }
+
+            foreach (var masteredPartition in request.MasteredPartitions.PartitionIds)
+            {
+                MasteredPartitions.Add(masteredPartition);
+            }
+
             return new PartitionSchemaReply();
         }
     }
