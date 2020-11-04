@@ -68,12 +68,12 @@ namespace Server
         }
 
 
-        public override Task<StatusReply> Status(StatusRequest request, ServerCallContext context)
+        public override Task<ServerStatusReply> Status(ServerStatusRequest request, ServerCallContext context)
         {
             return Task.FromResult(PrintStatus());
         }
 
-        public StatusReply PrintStatus()
+        public ServerStatusReply PrintStatus()
         {
             Console.WriteLine("Online Servers");
             foreach (var server in ServersByPartition)
@@ -85,7 +85,7 @@ namespace Server
             {
                 Console.WriteLine($"Server {server}");
             }
-            return new StatusReply
+            return new ServerStatusReply
             {
                 Success = true
             };

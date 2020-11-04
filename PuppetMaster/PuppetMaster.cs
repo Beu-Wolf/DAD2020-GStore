@@ -11,27 +11,29 @@ namespace PuppetMaster
 
         private readonly struct ServerInfo
         {
-            internal string Id { get; }
-            internal string Url { get; }
-            // will have gRPC handles in the future
+            internal readonly string Id { get; }
+            internal readonly string Url { get; }
+            internal readonly PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient Grpc { get; }
 
-            internal ServerInfo(string id, string url)
+            internal ServerInfo(string id, string url, PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient grpc)
             {
                 Id = id;
                 Url = url;
+                Grpc = grpc;
             }
         }
 
         private readonly struct ClientInfo
         {
-            internal string Username { get; }
-            internal string Url { get; }
-            // will have gRPC handles in the future
+            internal readonly string Username { get; }
+            internal readonly string Url { get; }
+            internal readonly PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient Grpc { get; }
 
-            internal ClientInfo(string username, string url)
+            internal ClientInfo(string username, string url, PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient grpc)
             {
                 Username = username;
                 Url = url;
+                Grpc = grpc;
             }
         }
 
@@ -161,10 +163,10 @@ namespace PuppetMaster
 
             if(!int.TryParse(args[3], out int min_delay)
                 || !int.TryParse(args[4], out int max_delay)
-                || min_delay <= 0
-                || max_delay <= 0)
+                || min_delay < 0
+                || max_delay < 0)
             {
-                this.Form.Error("Server: delay arguments must be positive numbers");
+                this.Form.Error("Server: delay arguments must be non negative numbers");
                 return;
             }
 
@@ -193,6 +195,7 @@ namespace PuppetMaster
                 try
                 {
                     grpcClient = new PCSGrpcService.PCSGrpcServiceClient(channel);
+                    PCSClients[host] = grpcClient;
                 }
                 catch (Exception)
                 {
@@ -211,7 +214,9 @@ namespace PuppetMaster
             }
 
             // register server
-            ServerInfo server = new ServerInfo(id, url);
+            GrpcChannel serverChannel = GrpcChannel.ForAddress(url);
+            var serverGrpc = new PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient(serverChannel);
+            ServerInfo server = new ServerInfo(id, url, serverGrpc);
             this.Servers[id] = server;
 
             return;
@@ -363,7 +368,9 @@ namespace PuppetMaster
             }
 
             // register client
-            ClientInfo client = new ClientInfo(username, url);
+            GrpcChannel clientChannel = GrpcChannel.ForAddress(url);
+            var clientGrpc = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(clientChannel);
+            ClientInfo client = new ClientInfo(username, url, clientGrpc);
             this.Clients[username] = client;
 
             return;
@@ -385,6 +392,17 @@ namespace PuppetMaster
                 goto StatusUsage;
             }
 
+            foreach (var server in this.Servers.Values)
+            {
+                server.Grpc.Status(new ServerStatusRequest());
+            }
+
+            foreach (var client in this.Clients.Values)
+            {
+                client.Grpc.Status(new ClientStatusRequest());
+            }
+
+
             return;
         StatusUsage:
             this.Form.Error("Status usage: Status");
@@ -405,7 +423,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send crash command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Crash(new CrashRequest());
 
             return;
         CrashUsage:
@@ -427,7 +446,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send freeze command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Freeze(new FreezeRequest());
 
             return;
         FreezeUsage:
@@ -449,7 +469,8 @@ namespace PuppetMaster
                 return;
             }
 
-            // send unfreeze command
+            ServerInfo server = this.Servers[server_id];
+            server.Grpc.Unfreeze(new UnfreezeRequest());
 
             return;
         UnfreezeUsage:
@@ -479,8 +500,7 @@ namespace PuppetMaster
 
         private void SendInformationToClient(ConcurrentDictionary<string, List<string>> serverIdsByPartitionCopy, ConcurrentDictionary<string, ServerInfo> serverUrlsCopy, ClientInfo client)
         {
-            GrpcChannel channel = GrpcChannel.ForAddress(client.Url);
-            var grpcClient = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(channel);
+            var grpcClient = client.Grpc;
 
             var request = new NetworkInformationRequest();
             foreach (var serverIds in serverIdsByPartitionCopy)
