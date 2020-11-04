@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Threading;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Grpc.Net.Client;
@@ -492,6 +493,10 @@ namespace PuppetMaster
             }
 
             // maybe disable form input for x_ms ms
+            this.Form.DisableInput();
+            this.Form.Log($"Waiting for {x_ms} ms");
+            Thread.Sleep(x_ms);
+            this.Form.EnableInput();
 
             return;
         WaitUsage:
