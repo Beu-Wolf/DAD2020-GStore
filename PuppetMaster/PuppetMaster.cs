@@ -3,46 +3,167 @@ using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Grpc.Net.Client;
 using System.Collections.Generic;
+using System.Collections;
+using System.Threading;
+using System.Linq;
 
 namespace PuppetMaster
 {
     public class PuppetMaster
     {
 
-        private readonly struct ServerInfo
-        {
-            internal readonly string Id { get; }
-            internal readonly string Url { get; }
-            internal readonly PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient Grpc { get; }
+        static private ConcurrentDictionary<string, ServerInfo> Servers = new ConcurrentDictionary<string, ServerInfo>();
+        static private ConcurrentDictionary<string, ClientInfo> Clients = new ConcurrentDictionary<string, ClientInfo>();
+        static private ConcurrentDictionary<string, Partition> Partitions = new ConcurrentDictionary<string, Partition>();
 
-            internal ServerInfo(string id, string url, PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient grpc)
+        private class ServerInfo
+        {
+            private bool Ready = false;
+            public string Id { get; }
+            public string Url { get; }
+            public PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient Grpc { get; }
+
+            public ServerInfo(string id, string url, PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient grpc)
             {
                 Id = id;
                 Url = url;
                 Grpc = grpc;
             }
+
+            public void Init()
+            {
+                bool alive = false;
+                ServerPingRequest request = new ServerPingRequest();
+                while (!alive)
+                {
+                    try
+                    {
+                        Grpc.Ping(request);
+                        alive = true;
+                    }
+                    catch (Exception)
+                    {
+                        Thread.Sleep(500);
+                    }
+                }
+
+                lock (this)
+                {
+                    Ready = true;
+                    Monitor.PulseAll(this);
+                }
+            }
+
+            public void WaitForReady()
+            {
+                lock (this)
+                {
+                    while (!Ready) Monitor.Wait(this);
+                }
+            }
         }
 
-        private readonly struct ClientInfo
+        private class ClientInfo
         {
-            internal readonly string Username { get; }
-            internal readonly string Url { get; }
-            internal readonly PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient Grpc { get; }
+            public string Username { get; }
+            public string Url { get; }
+            public PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient Grpc { get; }
 
-            internal ClientInfo(string username, string url, PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient grpc)
+            public ClientInfo(string username, string url, PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient grpc)
             {
                 Username = username;
                 Url = url;
                 Grpc = grpc;
+            }
+
+            public void Init()
+            {
+                List<Partition> partitions = new List<Partition>(Partitions.Values);
+
+                bool alive = false;
+                ClientPingRequest request = new ClientPingRequest();
+                while (!alive)
+                {
+                    try
+                    {
+                        Grpc.Ping(request);
+                        alive = true;
+                    }
+                    catch
+                    {
+                        Thread.Sleep(500);
+                    }
+                }
+                SendInformationToClient(partitions);
+            }
+            private void SendInformationToClient(List<Partition> partitions)
+            {
+                Dictionary<string, string> serverUrls = new Dictionary<string, string>();
+                var request = new NetworkInformationRequest();
+
+                foreach (var partition in partitions)
+                {
+                    partition.WaitForReady();
+                    request.ServerIdsByPartition.Add(partition.Id, new PartitionServers
+                    {
+                        ServerIds = { partition.ServerIds }
+                    });
+
+                    foreach (var serverId in partition.ServerIds)
+                    {
+                        if (!serverUrls.ContainsKey(serverId))
+                        {
+                            serverUrls.Add(serverId, Servers[serverId].Url);
+                        }
+                    }
+                }
+
+                foreach (var serverUrl in serverUrls)
+                {
+                    request.ServerUrls.Add(serverUrl.Key, serverUrl.Value);
+                }
+
+                Grpc.NetworkInformation(request);
+            }
+        }
+
+        private class Partition
+        {
+            private bool Ready = false;
+
+            public string Id { get; }
+            public List<string> ServerIds;
+
+            public Partition(string id, List<string> serverIds) {
+                Id = id;
+                ServerIds = serverIds;
+            }
+
+            public void Init() {
+                foreach (var server in ServerIds)
+                {
+                    while (!Servers.ContainsKey(server)) Thread.Sleep(100);
+                    Servers[server].WaitForReady();
+                }
+                lock (this)
+                {
+                    Ready = true;
+                    Monitor.PulseAll(this);
+                }
+            }
+
+            public void WaitForReady()
+            {
+                lock(this)
+                {
+                    while (!Ready) Monitor.Wait(this);
+                }
             }
         }
 
         // We need to detect if this value was already assigned
         // Cannot use readonly since will be initialized after the constructor
         private int ReplicationFactor = -1;
-        private ConcurrentDictionary<string, ServerInfo> Servers = new ConcurrentDictionary<string, ServerInfo>();
-        private ConcurrentDictionary<string, ClientInfo> Clients = new ConcurrentDictionary<string, ClientInfo>();
-        private ConcurrentDictionary<string, List<string>> Partitions = new ConcurrentDictionary<string, List<string>>();
 
         private PuppetMasterForm Form;
         private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
@@ -77,7 +198,7 @@ namespace PuppetMaster
                     Task.Run(() => HandleServerCommand(args));
                     break;
                 case "Partition":
-                    Task.Run(() => HandlePartitionCommand(args));
+                    HandlePartitionCommand(args);
                     break;
                 case "Client":
                     Task.Run(() => HandleClientCommand(args));
@@ -176,7 +297,7 @@ namespace PuppetMaster
                 return;
             }
 
-            if (this.Servers.ContainsKey(id))
+            if (Servers.ContainsKey(id))
             {
                 this.Form.Error($"Server: server {id} already exists");
                 return;
@@ -217,7 +338,8 @@ namespace PuppetMaster
             GrpcChannel serverChannel = GrpcChannel.ForAddress(url);
             var serverGrpc = new PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient(serverChannel);
             ServerInfo server = new ServerInfo(id, url, serverGrpc);
-            this.Servers[id] = server;
+            Servers[id] = server;
+            server.Init();
 
             return;
 
@@ -264,7 +386,7 @@ namespace PuppetMaster
 
             // check if unique partition name
             string partitionName = args[2];
-            if(this.Partitions.ContainsKey(partitionName))
+            if(Partitions.ContainsKey(partitionName))
             {
                 this.Form.Error($"Partition: partition {partitionName} already exists");
                 return;
@@ -272,22 +394,17 @@ namespace PuppetMaster
 
             // check if all partition servers exist
             List<string> servers = new List<string>();
-            bool failed = false;
             for(int i = 3; i < args.Length; i++)
             {
-                if(!this.Servers.ContainsKey(args[i]))
-                {
-                    this.Form.Error($"Partition: server {args[i]} does not exist");
-                    failed = true;
-                    continue;
-                }
                 servers.Add(args[i]);
             }
-            if (failed) return;
 
             // create partition
+            Partition partition = new Partition(partitionName, servers);
+            Partitions[partitionName] = partition;
 
-            this.Partitions[partitionName] = servers;
+
+            Task.Run(() => partition.Init());
 
             return;
         PartitionUsage:
@@ -306,7 +423,7 @@ namespace PuppetMaster
             string url = args[2];
             string scriptFile = args[3];
 
-            if (this.Clients.ContainsKey(username))
+            if (Clients.ContainsKey(username))
             {
                 this.Form.Error($"Client: client {username} already exists");
                 return;
@@ -352,6 +469,8 @@ namespace PuppetMaster
                 }
             }
 
+            grpcClient.Ping(new PCSPingRequest());
+
             try {
                 if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port }).Ok)
                 {
@@ -371,7 +490,9 @@ namespace PuppetMaster
             GrpcChannel clientChannel = GrpcChannel.ForAddress(url);
             var clientGrpc = new PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient(clientChannel);
             ClientInfo client = new ClientInfo(username, url, clientGrpc);
-            this.Clients[username] = client;
+            Clients[username] = client;
+
+            client.Init();
 
             return;
 
@@ -392,12 +513,12 @@ namespace PuppetMaster
                 goto StatusUsage;
             }
 
-            foreach (var server in this.Servers.Values)
+            foreach (var server in Servers.Values)
             {
                 server.Grpc.Status(new ServerStatusRequest());
             }
 
-            foreach (var client in this.Clients.Values)
+            foreach (var client in Clients.Values)
             {
                 client.Grpc.Status(new ClientStatusRequest());
             }
@@ -417,13 +538,13 @@ namespace PuppetMaster
             }
 
             string server_id = args[1];
-            if (!this.Servers.ContainsKey(server_id))
+            if (!Servers.ContainsKey(server_id))
             {
                 this.Form.Error($"Crash: server {server_id} does not exist");
                 return;
             }
 
-            ServerInfo server = this.Servers[server_id];
+            ServerInfo server = Servers[server_id];
             server.Grpc.Crash(new CrashRequest());
 
             return;
@@ -440,13 +561,13 @@ namespace PuppetMaster
             }
 
             string server_id = args[1];
-            if (!this.Servers.ContainsKey(server_id))
+            if (!Servers.ContainsKey(server_id))
             {
                 this.Form.Error($"Freeze: server {server_id} does not exist");
                 return;
             }
 
-            ServerInfo server = this.Servers[server_id];
+            ServerInfo server = Servers[server_id];
             server.Grpc.Freeze(new FreezeRequest());
 
             return;
@@ -463,13 +584,13 @@ namespace PuppetMaster
             }
 
             string server_id = args[1];
-            if(!this.Servers.ContainsKey(server_id))
+            if(!Servers.ContainsKey(server_id))
             {
                 this.Form.Error($"Unfreeze: server {server_id} does not exist");
                 return;
             }
 
-            ServerInfo server = this.Servers[server_id];
+            ServerInfo server = Servers[server_id];
             server.Grpc.Unfreeze(new UnfreezeRequest());
 
             return;
@@ -498,24 +619,5 @@ namespace PuppetMaster
             this.Form.Error("Wait usage: Wait x_ms");
         }
 
-        private void SendInformationToClient(ConcurrentDictionary<string, List<string>> serverIdsByPartitionCopy, ConcurrentDictionary<string, ServerInfo> serverUrlsCopy, ClientInfo client)
-        {
-            var grpcClient = client.Grpc;
-
-            var request = new NetworkInformationRequest();
-            foreach (var serverIds in serverIdsByPartitionCopy)
-            {
-                request.ServerIdsByPartition.Add(serverIds.Key, new PartitionServers
-                {
-                    ServerIds = { serverIds.Value }
-                });
-            }
-            foreach (var serverUrl in serverUrlsCopy)
-            {
-                request.ServerUrls.Add(serverUrl.Key, serverUrl.Value.Url);
-            }
-
-            grpcClient.NetworkInformation(request);
-        }
     }
 }
