@@ -5,6 +5,7 @@ service PuppetMasterServerGrpcService {
 	rpc Crash (CrashRequest) returns (CrashReply);
 	rpc Freeze (FreezeRequest) returns (FreezeReply);
 	rpc Unfreeze (UnfreezeRequest) returns (UnfreezeReply);
+	rpc Ping (ServerPingRequest) returns (ServerPingReply);
 }
 
 message ServerStatusRequest {
@@ -37,4 +38,12 @@ message UnfreezeRequest {
 
 message UnfreezeReply {
 	bool success = 1;
+}
+
+message ServerPingRequest {
+
+}
+
+message ServerPingReply {
+
 }

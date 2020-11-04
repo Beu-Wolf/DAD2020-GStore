@@ -3,6 +3,7 @@ syntax="proto3";
 service PuppetMasterClientGrpcService {
 	rpc Status (ClientStatusRequest) returns (ClientStatusReply);
 	rpc NetworkInformation (NetworkInformationRequest) returns (NetworkInformationReply);
+	rpc Ping (ClientPingRequest) returns (ClientPingReply);
 }
 
 
@@ -24,4 +25,13 @@ message ClientStatusRequest {
 }
 
 message ClientStatusReply {
+
+}
+
+message ClientPingRequest {
+
+}
+
+message ClientPingReply {
+
 }

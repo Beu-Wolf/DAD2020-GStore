@@ -89,5 +89,10 @@ namespace PCS
             Pcs.LaunchServer("0.0.0.0", request.Port, request.MinDelay, request.MaxDelay);
             return Task.FromResult(new LaunchServerReply { Ok = true });
         }
+
+        public override Task<PCSPingReply> Ping(PCSPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new PCSPingReply());
+        }
     }
 }

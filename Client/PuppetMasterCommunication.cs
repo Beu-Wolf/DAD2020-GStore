@@ -75,5 +75,10 @@ namespace Client
             return new ClientStatusReply();
         }
 
+        public override Task<ClientPingReply> Ping(ClientPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new ClientPingReply());
+        }
+
     }
 }

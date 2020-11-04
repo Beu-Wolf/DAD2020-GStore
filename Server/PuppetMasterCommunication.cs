@@ -91,5 +91,9 @@ namespace Server
             };
         }
 
+        public override Task<ServerPingReply> Ping(ServerPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new ServerPingReply());
+        }
     }
 }
