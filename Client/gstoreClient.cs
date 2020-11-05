@@ -5,6 +5,7 @@ using Grpc.Net.Client;
 using Grpc.Core;
 using System.Linq;
 using System.Collections.Concurrent;
+using System.IO;
 
 namespace Client
 {
@@ -292,12 +293,8 @@ namespace Client
             string host = args[0];
 
             var serverIdsByPartition = new ConcurrentDictionary<string, List<string>>();
-            serverIdsByPartition.TryAdd("part-1", new List<string> { "1", "2" });
-            serverIdsByPartition.TryAdd("part-2", new List<string> { "2" });
 
             var serverUrls = new ConcurrentDictionary<string, string>();
-            serverUrls.TryAdd("1", "http://localhost:10010");
-            serverUrls.TryAdd("2", "http://localhost:10011");
 
             var crashedServers = new ConcurrentBag<string>();
 
@@ -326,7 +323,10 @@ namespace Client
             try {
                 string line;
 
-                System.IO.StreamReader file = new System.IO.StreamReader(args[2]);
+                string filePath = Directory.GetCurrentDirectory() + "\\" + args[2] + ".txt";
+                Console.WriteLine("File Path: " + filePath); 
+
+                System.IO.StreamReader file = new System.IO.StreamReader(filePath);
                 while ((line = file.ReadLine()) != null) 
                 {
                     string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
@@ -346,6 +346,7 @@ namespace Client
                 Console.WriteLine("File not found. Exiting...");
             } finally
             {
+                Console.ReadKey();
                 server.ShutdownAsync().Wait();
             }
         }
@@ -417,15 +418,19 @@ namespace Client
            
         }
         static void Handle_write(string[] cmd, GSTOREClient client) {
-            if (cmd.Length != 4) {
+            if (cmd.Length < 4) {
                 Console.WriteLine("Invalid command format!");
                 Console.WriteLine("Use: `write <partition_id> <object_id> <value>`");
                 return;
             }
 
+            // Join value
+            string value = String.Join(' ', cmd.Skip(3));
+
+            // Verify if bigger then 4
+
             string partitionId = cmd[1];
             string objectId = cmd[2];
-            string value = cmd[3];
 
             // Console.WriteLine($"write {partitionId} {objectId} {value}");
             Console.WriteLine("write " + partitionId + " " + objectId + " " + value);

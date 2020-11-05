@@ -5,9 +5,10 @@ using System.Threading.Tasks;
 using Grpc.Net.Client;
 using System.Collections.Generic;
 using System.Collections;
-using System.Threading;
 using System.Security.Policy;
 using System.Linq;
+using System.Windows.Forms;
+using System.Threading.Channels;
 
 namespace PuppetMaster
 {
@@ -25,11 +26,15 @@ namespace PuppetMaster
             public string Url { get; }
             public PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient Grpc { get; }
 
-            public ServerInfo(string id, string url, PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient grpc)
+            private object FreezeLock = new object();
+            private bool IsFrozen = false;
+
+            public ServerInfo(string id, string url)
             {
                 Id = id;
                 Url = url;
-                Grpc = grpc;
+                GrpcChannel serverChannel = GrpcChannel.ForAddress(url);
+                Grpc = new PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient(serverChannel);
             }
 
             public void Init()
@@ -63,6 +68,54 @@ namespace PuppetMaster
                     while (!Ready) Monitor.Wait(this);
                 }
             }
+
+            public void SendInformationToServer()
+            {
+                var request = new PartitionSchemaRequest();
+                List<string> mastered = new List<string>();
+                foreach (var partition in Partitions)
+                {
+                    request.PartitionServers[partition.Key] = new PartitionInfo
+                    {
+                        ServerIds = { partition.Value.ServerIds }
+                    };
+                    if (partition.Value.ServerIds[0] == Id)
+                    { // server master of this partition
+                        mastered.Add(partition.Key);
+                    }
+                }
+
+                foreach (var server in Servers.Values)
+                {
+                    request.ServerUrls[server.Id] = server.Url;
+                }
+
+                request.MasteredPartitions = new MasteredInfo
+                {
+                    PartitionIds = { mastered }
+                };
+
+                Grpc.PartitionSchema(request);
+            }
+
+            public void FreezeServer()
+            {
+                lock(FreezeLock)
+                {
+                    IsFrozen = true;
+                    Monitor.PulseAll(FreezeLock);
+                }
+            }
+
+            public void WaitForFreeze()
+            {
+                lock(FreezeLock)
+                {
+                    while (!IsFrozen) Monitor.Wait(FreezeLock);
+                    IsFrozen = false;
+                }
+                
+            }
         }
 
         private class ClientInfo
@@ -70,6 +123,7 @@ namespace PuppetMaster
             public string Username { get; }
             public string Url { get; }
             public PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient Grpc { get; }
+
 
             public ClientInfo(string username, string url, PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceClient grpc)
             {
@@ -136,6 +190,7 @@ namespace PuppetMaster
             public string Id { get; }
             public List<string> ServerIds;
 
+
             public Partition(string id, List<string> serverIds) {
                 Id = id;
                 ServerIds = serverIds;
@@ -147,6 +202,10 @@ namespace PuppetMaster
                     while (!Servers.ContainsKey(server)) Thread.Sleep(100);
                     Servers[server].WaitForReady();
                 }
+                foreach (var serverId in ServerIds)
+                {
+                    Servers[serverId].SendInformationToServer();
+                }
                 lock (this)
                 {
                     Ready = true;
@@ -156,7 +215,7 @@ namespace PuppetMaster
 
             public void WaitForReady()
             {
-                lock(this)
+                lock (this)
                 {
                     while (!Ready) Monitor.Wait(this);
                 }
@@ -171,6 +230,7 @@ namespace PuppetMaster
         private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
             = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
         private const int PCS_PORT = 10000;
+
 
 
         public PuppetMaster()
@@ -327,6 +387,7 @@ namespace PuppetMaster
                 }
             }
 
+
             if (grpcClient.LaunchServer(new LaunchServerRequest { Id = id, Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
             {
                 this.Form.Log("Server: successfully launched server at " + host + ":" + port);
@@ -337,9 +398,7 @@ namespace PuppetMaster
             }
 
             // register server
-            GrpcChannel serverChannel = GrpcChannel.ForAddress(url);
-            var serverGrpc = new PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceClient(serverChannel);
-            ServerInfo server = new ServerInfo(id, url, serverGrpc);
+            ServerInfo server = new ServerInfo(id, url);
             Servers[id] = server;
             server.Init();
 
@@ -539,6 +598,11 @@ namespace PuppetMaster
                 goto CrashUsage;
             }
 
+            foreach (var partition in Partitions.Values)
+            {
+                partition.WaitForReady();
+            }
+
             string server_id = args[1];
             if (!Servers.ContainsKey(server_id))
             {
@@ -562,6 +626,11 @@ namespace PuppetMaster
                 goto FreezeUsage;
             }
 
+            foreach (var partition in Partitions.Values)
+            {
+                partition.WaitForReady();
+            }
+
             string server_id = args[1];
             if (!Servers.ContainsKey(server_id))
             {
@@ -570,7 +639,9 @@ namespace PuppetMaster
             }
 
             ServerInfo server = Servers[server_id];
+            server.FreezeServer();
             server.Grpc.Freeze(new FreezeRequest());
+
 
             return;
         FreezeUsage:
@@ -585,6 +656,11 @@ namespace PuppetMaster
                 goto UnfreezeUsage;
             }
 
+            foreach (var partition in Partitions.Values)
+            {
+                partition.WaitForReady();
+            }
+
             string server_id = args[1];
             if(!Servers.ContainsKey(server_id))
             {
@@ -593,13 +669,14 @@ namespace PuppetMaster
             }
 
             ServerInfo server = Servers[server_id];
+            server.WaitForFreeze();
             server.Grpc.Unfreeze(new UnfreezeRequest());
 
             return;
         UnfreezeUsage:
             this.Form.Error("Unfreeze usage: Unreeze server_id");
         }
-
+            
         private void HandleWaitCommand(string[] args)
         {
             if (args.Length != 1+1)
@@ -623,38 +700,6 @@ namespace PuppetMaster
             return;
         WaitUsage:
             this.Form.Error("Wait usage: Wait x_ms");
-        }
-
-    
-        private void SendInformationToServer(string server_id)
-        {
-            var serverGrpc = Servers[server_id].Grpc;
-
-            var request = new PartitionSchemaRequest();
-            List<string> mastered = new List<string>();
-            foreach (var partition in Partitions)
-            {
-                request.PartitionServers[partition.Key] = new PartitionInfo
-                {
-                    ServerIds = { partition.Value.ServerIds }
-                };
-                if(partition.Value.ServerIds[0] == server_id)
-                { // server master of this partition
-                    mastered.Add(partition.Key);
-                }
-            }
-
-            foreach (var server in Servers.Values)
-            {
-                request.ServerUrls[server.Id] = server.Url;
-            }
-
-            request.MasteredPartitions = new MasteredInfo
-            {
-                PartitionIds = { mastered }
-            };
-
-            serverGrpc.PartitionSchema(request);
         }
     }
 }
