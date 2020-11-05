@@ -62,10 +62,12 @@ namespace Client
 
         public ClientStatusReply ClientStatus()
         {
-            Console.WriteLine("Online Servers");
+            Console.WriteLine("Online Servers:");
             foreach (var server in ServersIdByPartition)
             {
-                Console.WriteLine($"Server {server.Value} from partition {server.Key}");
+                Console.Write("Server ");
+                server.Value.ForEach(x => Console.Write(x + " "));
+                Console.Write("from partition " + server.Key + "\r\n");
             }
             Console.WriteLine("Crashed Servers");
             foreach (var server in CrashedServers)

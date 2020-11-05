@@ -16,9 +16,9 @@ namespace PCS
             ClientPath = clientPath;
         }
 
-        public void LaunchServer(string host, int port, int minDelay, int maxDelay)
+        public void LaunchServer(string id, string host, int port, int minDelay, int maxDelay)
         {
-            var psi = new ProcessStartInfo(ServerPath, $"{host} {port} {minDelay} {maxDelay}");
+            var psi = new ProcessStartInfo(ServerPath, $" {id} {host} {port} {minDelay} {maxDelay}");
             psi.UseShellExecute = true;
             Process.Start(psi);
         }
@@ -86,7 +86,7 @@ namespace PCS
 
         public override Task<LaunchServerReply> LaunchServer(LaunchServerRequest request, ServerCallContext context)
         {
-            Pcs.LaunchServer("0.0.0.0", request.Port, request.MinDelay, request.MaxDelay);
+            Pcs.LaunchServer(request.Id, "0.0.0.0", request.Port, request.MinDelay, request.MaxDelay);
             return Task.FromResult(new LaunchServerReply { Ok = true });
         }
 

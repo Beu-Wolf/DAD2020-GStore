@@ -45,11 +45,22 @@ namespace PuppetMaster
             Log("[ERROR] " + msg);
         }
 
+        public void DisableInput()
+        {
+            this.CommandBox.Enabled = false;
+        }
+
+        public void EnableInput()
+        {
+            this.CommandBox.Enabled = true;
+        }
+
         private void SendCommandToPuppetMaster()
         {
-            Log(">>> " + CommandBox.Text);
-            this.PuppetMaster.ParseCommand(CommandBox.Text);
+            string cmd = CommandBox.Text;
             CommandBox.Clear();
+            Log(">>> " + cmd);
+            this.PuppetMaster.ParseCommand(cmd);
         }
 
         private void RunScriptButton_Click(object sender, EventArgs e)

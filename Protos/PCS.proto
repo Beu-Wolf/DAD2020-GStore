@@ -7,9 +7,10 @@ service PCSGrpcService {
 }
 
 message LaunchServerRequest {
-	int32 port = 1;
-	int32 min_delay = 2;
-	int32 max_delay = 3;
+	string id = 1;
+	int32 port = 2;
+	int32 min_delay = 3;
+	int32 max_delay = 4;
 }
 
 message LaunchServerReply {

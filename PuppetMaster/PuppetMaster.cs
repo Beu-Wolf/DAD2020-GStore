@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Threading;
 using System.Collections.Concurrent;
 using System.Threading.Tasks;
 using Grpc.Net.Client;
 using System.Collections.Generic;
 using System.Collections;
 using System.Threading;
+using System.Security.Policy;
 using System.Linq;
 
 namespace PuppetMaster
@@ -325,7 +327,7 @@ namespace PuppetMaster
                 }
             }
 
-            if (grpcClient.LaunchServer(new LaunchServerRequest { Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
+            if (grpcClient.LaunchServer(new LaunchServerRequest { Id = id, Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
             {
                 this.Form.Log("Server: successfully launched server at " + host + ":" + port);
             }
@@ -613,11 +615,46 @@ namespace PuppetMaster
             }
 
             // maybe disable form input for x_ms ms
+            this.Form.DisableInput();
+            this.Form.Log($"Waiting for {x_ms} ms");
+            Thread.Sleep(x_ms);
+            this.Form.EnableInput();
 
             return;
         WaitUsage:
             this.Form.Error("Wait usage: Wait x_ms");
         }
 
+    
+        private void SendInformationToServer(string server_id)
+        {
+            var serverGrpc = Servers[server_id].Grpc;
+
+            var request = new PartitionSchemaRequest();
+            List<string> mastered = new List<string>();
+            foreach (var partition in Partitions)
+            {
+                request.PartitionServers[partition.Key] = new PartitionInfo
+                {
+                    ServerIds = { partition.Value.ServerIds }
+                };
+                if(partition.Value.ServerIds[0] == server_id)
+                { // server master of this partition
+                    mastered.Add(partition.Key);
+                }
+            }
+
+            foreach (var server in Servers.Values)
+            {
+                request.ServerUrls[server.Id] = server.Url;
+            }
+
+            request.MasteredPartitions = new MasteredInfo
+            {
+                PartitionIds = { mastered }
+            };
+
+            serverGrpc.PartitionSchema(request);
+        }
     }
 }

@@ -12,9 +12,9 @@ namespace Server
         private readonly int MaxDelay;
 
         private readonly object FreezeLock = new object();
-        private Boolean freezeCommands;
+        private bool freezeCommands;
 
-        public Boolean FreezeCommands { get => freezeCommands;  
+        public bool FreezeCommands { get => freezeCommands;  
             set {
                 lock (FreezeLock)
                 {
