@@ -3,6 +3,7 @@ syntax="proto3";
 service PCSGrpcService {
 	rpc LaunchServer (LaunchServerRequest) returns (LaunchServerReply);
 	rpc LaunchClient (LaunchClientRequest) returns (LaunchClientReply);
+	rpc Ping (PCSPingRequest) returns (PCSPingReply);
 }
 
 message LaunchServerRequest {
@@ -23,4 +24,12 @@ message LaunchClientRequest {
 
 message LaunchClientReply {
 	bool ok = 1;
+}
+
+message PCSPingRequest {
+
+}
+
+message PCSPingReply {
+
 }

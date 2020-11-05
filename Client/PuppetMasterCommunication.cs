@@ -32,18 +32,22 @@ namespace Client
 
         public NetworkInformationReply NetworkInfo(NetworkInformationRequest request)
         {
+            Console.WriteLine("Received NetworkInfo");
             foreach (var serverUrl in request.ServerUrls)
             {
-                if(!ServerUrls.TryAdd(serverUrl.Key, serverUrl.Value)) 
+                if(!ServerUrls.ContainsKey(serverUrl.Key))
                 {
-                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    ServerUrls[serverUrl.Key] = serverUrl.Value;
                 }
             }
             foreach (var partition in request.ServerIdsByPartition)
             {
-                if(!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
+                if(!ServersIdByPartition.ContainsKey(partition.Key))
                 {
-                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    if(!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
+                    {
+                        throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    }
                 }
             }
             lock(ContinueExecution.WaitForInformationLock)
@@ -75,6 +79,11 @@ namespace Client
                 Console.WriteLine($"Server {server}");
             }
             return new ClientStatusReply();
+        }
+
+        public override Task<ClientPingReply> Ping(ClientPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new ClientPingReply());
         }
 
     }

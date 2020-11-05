@@ -18,15 +18,19 @@ namespace PCS
 
         public void LaunchServer(string id, string host, int port, int minDelay, int maxDelay)
         {
-            var psi = new ProcessStartInfo(ServerPath, $" {id} {host} {port} {minDelay} {maxDelay}");
-            psi.UseShellExecute = true;
+            var psi = new ProcessStartInfo(ServerPath, $" {id} {host} {port} {minDelay} {maxDelay}")
+            {
+                UseShellExecute = true
+            };
             Process.Start(psi);
         }
 
         public void LaunchClient(string host, int port, string scriptPath)
         {
-            var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath}");
-            psi.UseShellExecute = true;
+            var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath}")
+            {
+                UseShellExecute = true
+            };
             Process.Start(psi);
         }
     }
@@ -88,6 +92,11 @@ namespace PCS
         {
             Pcs.LaunchServer(request.Id, "0.0.0.0", request.Port, request.MinDelay, request.MaxDelay);
             return Task.FromResult(new LaunchServerReply { Ok = true });
+        }
+
+        public override Task<PCSPingReply> Ping(PCSPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new PCSPingReply());
         }
     }
 }

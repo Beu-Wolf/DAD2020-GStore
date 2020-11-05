@@ -34,7 +34,9 @@ namespace Server
 
         public override Task<CrashReply> Crash(CrashRequest request, ServerCallContext context)
         {
-            Environment.Exit(1);
+            var t = new Thread(new ThreadStart(() => { Thread.Sleep(1000); Environment.Exit(1); }));
+            t.Start();
+            
             return Task.FromResult(new CrashReply
             {
                 Success = false
@@ -95,6 +97,11 @@ namespace Server
             };
         }
 
+        public override Task<ServerPingReply> Ping(ServerPingRequest request, ServerCallContext context)
+        {
+            return Task.FromResult(new ServerPingReply());
+        }
+
         public override Task<PartitionSchemaReply> PartitionSchema(PartitionSchemaRequest request, ServerCallContext context)
         {
             return Task.FromResult(PartitionSchemaMe(request));
@@ -104,17 +111,20 @@ namespace Server
         {
             foreach (var partitionDetails in request.PartitionServers)
             {
-                if(!ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
+                if(!ServersByPartition.ContainsKey(partitionDetails.Key))
                 {
-                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    if (!ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
+                    {
+                        throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    }
                 }
             }
 
             foreach (var serverUrl in request.ServerUrls)
             {
-                if(!ServerUrls.TryAdd(serverUrl.Key, serverUrl.Value))
+                if(!ServerUrls.ContainsKey(serverUrl.Key))
                 {
-                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    ServerUrls[serverUrl.Key] = serverUrl.Value;
                 }
             }
 

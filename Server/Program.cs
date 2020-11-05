@@ -149,18 +149,18 @@ namespace Server
 
             // Dictionary <partition_id, List<URLs>> all servers by partition
             ConcurrentDictionary<string, List<string>> ServersByPartition = new ConcurrentDictionary<string, List<string>>();
-            ServersByPartition.TryAdd("part-1", new List<string> { "s1", "s2" });
-            ServersByPartition.TryAdd("part-2", new List<string> { "s2" });
+            //ServersByPartition.TryAdd("part-1", new List<string> { "s1", "s2" });
+            //ServersByPartition.TryAdd("part-2", new List<string> { "s2" });
 
             ConcurrentDictionary<string, string> serverUrls = new ConcurrentDictionary<string, string>();
-            serverUrls.TryAdd("s1", "http://localhost:10010");
-            serverUrls.TryAdd("s2", "http://localhost:10011");
+            //serverUrls.TryAdd("s1", "http://localhost:10010");
+            //serverUrls.TryAdd("s2", "http://localhost:10011");
 
             // List of crashed servers
             ConcurrentBag<string> CrashedServers = new ConcurrentBag<string>();
 
             // List partition which im master of
-            List<string> MasteredPartitions = new List<string> { Port == 10010 ? "part-1" : "part-2" };
+            List<string> MasteredPartitions = new List<string>(); // { Port == 10010 ? "part-1" : "part-2" };
 
             var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
 
