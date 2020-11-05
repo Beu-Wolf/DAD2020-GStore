@@ -107,25 +107,25 @@ namespace Server
 
         static void Main(string[] args)
         {
-            if (args.Length != 4)
+            if (args.Length != 5)
             {
-                Console.WriteLine("Usage: Server.exe host port min_delay max_delay");
+                Console.WriteLine("Usage: Server.exe server_id host port min_delay max_delay");
                 return;
             }
 
 
-            if (!int.TryParse(args[1], out int Port))
+            if (!int.TryParse(args[2], out int Port))
             {
                 Console.WriteLine("Invalid port value");
                 return;
             }
 
-            if (!int.TryParse(args[2], out int minDelay)) {
+            if (!int.TryParse(args[3], out int minDelay)) {
                 Console.WriteLine("Invalid min delay");
                 return;
             }
 
-            if (!int.TryParse(args[3], out int maxDelay)) {
+            if (!int.TryParse(args[4], out int maxDelay)) {
                 Console.WriteLine("Invalid max delay");
                 return;
             }
@@ -139,7 +139,9 @@ namespace Server
             AppContext.SetSwitch(
    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
-            string host = args[0]; // Maybe pass as parameter when instanciating server
+            string id = args[0];
+
+            string host = args[1];
 
             // Dictionary with values
             ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
@@ -147,29 +149,32 @@ namespace Server
 
             // Dictionary <partition_id, List<URLs>> all servers by partition
             ConcurrentDictionary<string, List<string>> ServersByPartition = new ConcurrentDictionary<string, List<string>>();
-            ServersByPartition.TryAdd("part-1", new List<string> { "http://localhost:10001", "http://localhost:10002" });
-            ServersByPartition.TryAdd("part-2", new List<string> { "http://localhost:10002" });
+            ServersByPartition.TryAdd("part-1", new List<string> { "s1", "s2" });
+            ServersByPartition.TryAdd("part-2", new List<string> { "s2" });
+
+            ConcurrentDictionary<string, string> serverUrls = new ConcurrentDictionary<string, string>();
+            serverUrls.TryAdd("s1", "http://localhost:10010");
+            serverUrls.TryAdd("s2", "http://localhost:10011");
 
             // List of crashed servers
             ConcurrentBag<string> CrashedServers = new ConcurrentBag<string>();
 
             // List partition which im master of
-            List<string> MasteredPartitions = new List<string> { Port == 10001 ? "part-1" : "part-2" };
+            List<string> MasteredPartitions = new List<string> { Port == 10010 ? "part-1" : "part-2" };
 
             var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
 
             // ReadWriteLock for listMe functions
             var localReadWriteLock = new ReaderWriterLock();
 
-            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, MasteredPartitions, localReadWriteLock, CrashedServers)
+            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, serverUrls, MasteredPartitions, localReadWriteLock, CrashedServers)
             {
-                MyHost = host,
-                MyPort = Port
+                MyId = id
             };
 
             var serverSyncService = new ServerSyncService(keyValuePairs, ServersByPartition, localReadWriteLock, CrashedServers);
 
-            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, MasteredPartitions, CrashedServers, interceptor);
+            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, serverUrls, MasteredPartitions, CrashedServers, interceptor);
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {

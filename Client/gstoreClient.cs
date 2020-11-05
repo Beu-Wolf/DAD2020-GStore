@@ -31,7 +31,7 @@ namespace Client
         private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
         private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly ConcurrentBag<string> CrashedServers;
-        private string currentServerId;
+        private string currentServerId = "-1";
 
 
 
@@ -41,13 +41,6 @@ namespace Client
             ServerUrls = serverUrls;
             CrashedServers = crashedServers;
 
-            // Connect to random server
-            Random rnd = new Random();
-            var keyValPair = serverUrls.ElementAt(rnd.Next(serverUrls.Count));
-            Console.WriteLine($"Connecting to id {keyValPair.Key} at {keyValPair.Value}");
-            currentServerId = keyValPair.Key;
-            Channel = GrpcChannel.ForAddress(keyValPair.Value);
-            Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
         }
 
         public bool TryChangeCommunicationChannel(string server_id)
@@ -165,6 +158,7 @@ namespace Client
                         // If error is because Server failed, keep it
                         if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                         {
+                            Console.WriteLine($"Server {currentServerId} is down");
                             crashedServers.Add(currentServerId);
                         }
                         else
@@ -302,8 +296,8 @@ namespace Client
             serverIdsByPartition.TryAdd("part-2", new List<string> { "2" });
 
             var serverUrls = new ConcurrentDictionary<string, string>();
-            serverUrls.TryAdd("1", "http://localhost:10001");
-            serverUrls.TryAdd("2", "http://localhost:10002");
+            serverUrls.TryAdd("1", "http://localhost:10010");
+            serverUrls.TryAdd("2", "http://localhost:10011");
 
             var crashedServers = new ConcurrentBag<string>();
 
@@ -324,26 +318,27 @@ namespace Client
             server.Start();
 
             // Lock until information is received
-            lock(continueExecution.WaitForInformationLock)
+            lock (continueExecution.WaitForInformationLock)
             {
                 while (!continueExecution.Value) Monitor.Wait(continueExecution.WaitForInformationLock);
             }
 
             try {
-                    string line;
+                string line;
 
-                    System.IO.StreamReader file = new System.IO.StreamReader(args[2]);
-                    while ((line = file.ReadLine()) != null) {
-                        string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-                        CommandDispatcher(cmd, file, client);
-                    }
+                System.IO.StreamReader file = new System.IO.StreamReader(args[2]);
+                while ((line = file.ReadLine()) != null) 
+                {
+                    string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
+                    CommandDispatcher(cmd, file, client);
+                }
 
-                    file.Close();
+                file.Close();
 
-                    // We need to stay up, in order to respond to status commands by the Puppet Master
-                    // Start gRPC server of connection with PM
-                    // For now, just wait for user input
-                    Console.ReadKey();
+                // We need to stay up, in order to respond to status commands by the Puppet Master
+                // Start gRPC server of connection with PM
+                // For now, just wait for user input
+                Console.ReadKey();
 
 
 

@@ -13,8 +13,7 @@ namespace Server
 {
     public class ClientServerService : ClientServerGrpcService.ClientServerGrpcServiceBase
     {
-        public int MyPort { get; set; }
-        public string MyHost { get; set; }
+        public string MyId { get; set; }
 
         private readonly object WriteGlobalLock = new object();
 
@@ -22,17 +21,19 @@ namespace Server
 
         private readonly ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
         private readonly ConcurrentDictionary<string, List<string>> ServersByPartition;
+        private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly List<string> MasteredPartitions;
         private readonly ConcurrentBag<string> CrashedServers;
 
 
         public ClientServerService() {}
 
-        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartitions,
+        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
             List<string> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;
             ServersByPartition = serversByPartitions;
+            ServerUrls = serverUrls;
             MasteredPartitions = masteredPartitions;
             LocalReadWriteLock = readerWriterLock;
             CrashedServers = crashedServers;
@@ -98,7 +99,7 @@ namespace Server
                 {
                     // I'm master of this object's partition
                     // Send request to all other servers of partition
-                    ServersByPartition.TryGetValue(request.Key.PartitionId, out List<string> serverUrls);
+                    ServersByPartition.TryGetValue(request.Key.PartitionId, out List<string> serverIds);
 
                     if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
                     {
@@ -115,10 +116,10 @@ namespace Server
 
                     var connectionCrashedServers = new HashSet<string>();
 
-                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                    foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
                     {
 
-                        var channel = GrpcChannel.ForAddress(serverUrl);
+                        var channel = GrpcChannel.ForAddress(server.Value);
                         var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
                         // What to do if success returns false ?
                         try
@@ -132,9 +133,9 @@ namespace Server
                             // If grpc does no respond, we can assume it has crashed
                             if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
-                                // Add Url to hash Set
-                                Console.WriteLine($"Server {serverUrl} has crashed");
-                                connectionCrashedServers.Add(serverUrl);
+                                // Add to hash Set
+                                Console.WriteLine($"Server {server.Key} has crashed");
+                                connectionCrashedServers.Add(server.Key);
                             } 
                             else
                             {
@@ -143,11 +144,11 @@ namespace Server
                         }
                     }
 
-                    foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                    foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
                     {
                         try
                         {
-                            var channel = GrpcChannel.ForAddress(serverUrl);
+                            var channel = GrpcChannel.ForAddress(server.Value);
                             var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
                             // What to do if success returns false ?
                             client.ReleaseObjectLock(new ReleaseObjectLockRequest
@@ -161,8 +162,9 @@ namespace Server
                         {
                             if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                             {
-                                // Add Url to hash Set
-                                connectionCrashedServers.Add(serverUrl);
+                                // Add to hash Set
+                                Console.WriteLine($"Server {server.Key} has crashed");
+                                connectionCrashedServers.Add(server.Key);
                             }
                             else
                             {
@@ -178,15 +180,15 @@ namespace Server
                         UpdateCrashedServers(request.Key.PartitionId, connectionCrashedServers);
                         
                         // Contact Partition slaves an update their view of the partition
-                        foreach (var serverUrl in serverUrls.Where(x => !x.Contains($"http://{MyHost}:{MyPort}")))
+                        foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
                         {
-                            var channel = GrpcChannel.ForAddress(serverUrl);
+                            var channel = GrpcChannel.ForAddress(server.Value);
                             var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
 
                             client.RemoveCrashedServers(new RemoveCrashedServersRequest
                             {
                                 PartitionId = request.Key.PartitionId,
-                                ServerUrls = {connectionCrashedServers}
+                                ServerIds = {connectionCrashedServers}
                                 
                             });
                         }
@@ -203,7 +205,7 @@ namespace Server
             else
             {
                 // Tell him I'm not the master
-                throw new RpcException(new Status(StatusCode.PermissionDenied, $"Server {MyHost}:{MyPort} is not the master of partition {request.Key.PartitionId}"));
+                throw new RpcException(new Status(StatusCode.PermissionDenied, $"Server {MyId} is not the master of partition {request.Key.PartitionId}"));
             }
                       
         }
@@ -274,6 +276,5 @@ namespace Server
                 Keys = { lst }
             };
         }
-
     }
 }

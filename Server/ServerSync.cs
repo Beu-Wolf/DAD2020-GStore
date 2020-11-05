@@ -89,8 +89,8 @@ namespace Server
 
         public RemoveCrashedServersReply RemoveCrashed(RemoveCrashedServersRequest request)
         {
-            CrashedServers.Union(request.ServerUrls);
-            ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerUrls.Contains(x));
+            CrashedServers.Union(request.ServerIds);
+            ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerIds.Contains(x));
             return new RemoveCrashedServersReply
             {
                 Success = true
