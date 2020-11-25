@@ -1,10 +1,12 @@
 # Algorithm Protocol (data structures, methods, etc)
 
 ## Data definitions
-```<obj_id>: <partition_id,key>```
-```<obj_version>: <counter,client_id>```
-```<prop_msg_id>: <sender_replica_id,counter> // just used in RB messages```
-```<propagation_message>: <prop_msg_id, partition_id, <obj_id>, <obj_version>, "value">```
+```
+<obj_id>: <partition_id,key>
+<obj_version>: <counter,client_id>
+<prop_msg_id>: <sender_replica_id,counter> // just used in RB messages
+<propagation_message>: <prop_msg_id, partition_id, <obj_id>, <obj_version>, "value">
+```
 
 ## Clients
 ```
