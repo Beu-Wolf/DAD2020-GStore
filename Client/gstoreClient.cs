@@ -154,8 +154,10 @@ namespace Client
                     success = true;
                 } catch (RpcException e)
                 {
-                    if (e.Status.StatusCode != StatusCode.PermissionDenied)
+                    if (e.Status.StatusCode == StatusCode.PermissionDenied)
                     {
+                        Console.WriteLine($"Cannot write in server {currentServerId}");
+                    } else {
                         // If error is because Server failed, keep it
                         if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                         {

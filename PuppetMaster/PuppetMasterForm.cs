@@ -29,7 +29,6 @@ namespace PuppetMaster
 
         public void Log(string msg)
         {
-            return;
             if (logBox.InvokeRequired)
             {
                 LogDelegate ld = new LogDelegate(Log);
