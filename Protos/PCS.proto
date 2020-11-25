@@ -20,6 +20,7 @@ message LaunchServerReply {
 message LaunchClientRequest {
 	string script_file = 1;
 	int32 port = 2;
+	int32 id = 3;
 }
 
 message LaunchClientReply {

@@ -25,9 +25,9 @@ namespace PCS
             Process.Start(psi);
         }
 
-        public void LaunchClient(string host, int port, string scriptPath)
+        public void LaunchClient(string host, int port, string scriptPath, int id)
         {
-            var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath}")
+            var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath} {id}")
             {
                 UseShellExecute = true
             };
@@ -84,7 +84,7 @@ namespace PCS
 
         public override Task<LaunchClientReply> LaunchClient(LaunchClientRequest request, ServerCallContext context)
         {
-            Pcs.LaunchClient("0.0.0.0", request.Port, request.ScriptFile);
+            Pcs.LaunchClient("0.0.0.0", request.Port, request.ScriptFile, request.Id);
             return Task.FromResult(new LaunchClientReply { Ok = true });
         }
 
