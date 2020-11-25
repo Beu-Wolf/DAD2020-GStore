@@ -33,15 +33,15 @@ namespace Client
         private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly ConcurrentBag<string> CrashedServers;
         private string currentServerId = "-1";
+        private int Id;
 
 
-
-        public GSTOREClient(ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers)
+        public GSTOREClient(int id, ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers)
         {
+            Id = id;
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
             CrashedServers = crashedServers;
-
         }
 
         public bool TryChangeCommunicationChannel(string server_id)
@@ -276,9 +276,9 @@ namespace Client
     
         static void Main(string[] args) {
 
-            if (args.Length != 3)
+            if (args.Length != 4)
             {
-                Console.WriteLine("Usage: Client.exe host port <script_file>");
+                Console.WriteLine("Usage: Client.exe <host> <port> <script_file> <id>");
                 return;
             }
 
@@ -286,6 +286,12 @@ namespace Client
             if (!int.TryParse(args[1], out int Port))
             {
                 Console.WriteLine("Invalid port value");
+                return;
+            }
+
+            if (!int.TryParse(args[3], out int id))
+            {
+                Console.WriteLine("Invalid id");
                 return;
             }
 
@@ -300,7 +306,7 @@ namespace Client
 
             var crashedServers = new ConcurrentBag<string>();
 
-            var client = new GSTOREClient(serverIdsByPartition, serverUrls, crashedServers);
+            var client = new GSTOREClient(id, serverIdsByPartition, serverUrls, crashedServers);
 
             BoolWrapper continueExecution = new BoolWrapper(false);
 

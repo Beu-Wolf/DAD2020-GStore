@@ -228,6 +228,9 @@ namespace PuppetMaster
         // Cannot use readonly since will be initialized after the constructor
         private int ReplicationFactor = -1;
 
+        private int ClientCount = 0;
+        private object ClientCountLock = new object();
+
         private PuppetMasterForm Form;
         private ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient> PCSClients
             = new ConcurrentDictionary<string, PCSGrpcService.PCSGrpcServiceClient>();
@@ -533,9 +536,14 @@ namespace PuppetMaster
             }
 
             grpcClient.Ping(new PCSPingRequest());
+            int clientId;
+            lock(ClientCountLock)
+            {
+                clientId = ++ClientCount;
+            }
 
             try {
-                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port }).Ok)
+                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port, Id = clientId }).Ok)
                 {
                     this.Form.Log("Client: successfully launched client at " + host);
                 }
