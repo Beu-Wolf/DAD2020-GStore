@@ -45,6 +45,7 @@ namespace Server
 
         public override Task<FreezeReply> Freeze(FreezeRequest request, ServerCallContext context)
         {
+            Console.WriteLine("Received freeze");
             return Task.FromResult(FreezeServer());
         }
 
@@ -59,6 +60,7 @@ namespace Server
 
         public override Task<UnfreezeReply> Unfreeze(UnfreezeRequest request, ServerCallContext context)
         {
+            Console.WriteLine("Received unfreeze");
             return Task.FromResult(UnfreezeServer());
         }
 
@@ -109,6 +111,7 @@ namespace Server
 
         public PartitionSchemaReply PartitionSchemaMe(PartitionSchemaRequest request)
         {
+            Console.WriteLine("Received Partition Schema from pm");
             foreach (var partitionDetails in request.PartitionServers)
             {
                 if(!ServersByPartition.ContainsKey(partitionDetails.Key))

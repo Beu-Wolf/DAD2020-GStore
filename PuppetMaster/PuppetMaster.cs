@@ -102,6 +102,7 @@ namespace PuppetMaster
             {
                 lock(FreezeLock)
                 {
+                    this.Grpc.Freeze(new FreezeRequest());
                     IsFrozen = true;
                     Monitor.PulseAll(FreezeLock);
                 }
@@ -112,6 +113,7 @@ namespace PuppetMaster
                 lock(FreezeLock)
                 {
                     while (!IsFrozen) Monitor.Wait(FreezeLock);
+                    this.Grpc.Unfreeze(new UnfreezeRequest());
                     IsFrozen = false;
                 }
                 
@@ -612,6 +614,7 @@ namespace PuppetMaster
 
             ServerInfo server = Servers[server_id];
             server.Grpc.Crash(new CrashRequest());
+            this.Form.Log("Crashing server " + server_id);
 
             return;
         CrashUsage:
@@ -640,7 +643,7 @@ namespace PuppetMaster
 
             ServerInfo server = Servers[server_id];
             server.FreezeServer();
-            server.Grpc.Freeze(new FreezeRequest());
+            this.Form.Log("Freezing server " + server_id);
 
 
             return;
@@ -670,7 +673,7 @@ namespace PuppetMaster
 
             ServerInfo server = Servers[server_id];
             server.WaitForFreeze();
-            server.Grpc.Unfreeze(new UnfreezeRequest());
+            this.Form.Log("Unfreezing server " + server_id);
 
             return;
         UnfreezeUsage:
