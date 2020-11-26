@@ -4,8 +4,8 @@ import "ClientServer.proto";
 
 service ServerSyncGrpcService {
 	rpc PropagateWrite (PropagateWriteRequest) returns (PropagateWriteResponse);
-	rpc HeartBeat (HeartBeatRequest) returns (HeartBeatReply);
-	rpc ReportCrash (ReportCrashRequest) returns (ReportCrashReply); // report dead body among us
+	rpc Heartbeat (HeartbeatRequest) returns (HeartbeatResponse);
+	rpc ReportCrash (ReportCrashRequest) returns (ReportCrashResponse); // report dead body among us
 	
 	// REMOVE BELOW SERVICES WHEN UPGRADING TO ADVANCED
 	rpc LockObject (LockObjectRequest) returns (LockObjectReply);
@@ -22,11 +22,11 @@ message PropagateWriteResponse {
 	// empty
 }
 
-message HeartBeatRequest {
+message HeartbeatRequest {
 	// empty
 }
 
-message HeartBeatReply {
+message HeartbeatResponse {
 	// empty
 }
 
@@ -34,7 +34,7 @@ message ReportCrashRequest {
 	string dead_replica_id = 1;
 }
 
-message ReportCrashReply {
+message ReportCrashResponse {
 	// empty
 }
 
