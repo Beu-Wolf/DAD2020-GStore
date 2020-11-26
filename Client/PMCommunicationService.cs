@@ -3,11 +3,11 @@ using System.Threading.Tasks;
 
 namespace Client
 {
-    class PuppetMasterCommunicationService : PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceBase
+    class PMCommunicationService : PuppetMasterClientGrpcService.PuppetMasterClientGrpcServiceBase
     {
         private readonly GStoreClient Client;
 
-        public PuppetMasterCommunicationService(GStoreClient client)
+        public PMCommunicationService(GStoreClient client)
         {
             Client = client;
         }

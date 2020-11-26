@@ -42,7 +42,7 @@ namespace Client
             {
                 Services =
                 {
-                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(client))
+                    PuppetMasterClientGrpcService.BindService(new PMCommunicationService(client))
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
 
