@@ -20,7 +20,7 @@ namespace Server
             Object_id = object_id;
         }
 
-        public ObjectKey(Key key) : this (key.PartitionId, key.ObjectId) { }
+        public ObjectKey(ObjectId key) : this (key.PartitionId, key.ObjectKey) { }
 
         public class ObjectKeyComparer : IEqualityComparer<ObjectKey>
         {

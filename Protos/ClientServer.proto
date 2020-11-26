@@ -7,20 +7,25 @@ service ClientServerGrpcService {
 	rpc ListGlobal (ListGlobalRequest) returns (ListGlobalReply);
 }
 
-message Key {
+message ObjectId {
 	string partition_id = 1;
-	string object_id = 2;
+	string object_key = 2;
+}
+
+message ObjectVersion {
+	string client_id = 1;
+	int32 counter = 2;
 }
 
 message ObjectInfo {
-	Key key = 1;
+	ObjectId key = 1;
 	string value = 2;
 	bool isPartitionMaster = 3; 
 
 }
 
 message ReadObjectRequest {
-	Key key = 1;
+	ObjectId key = 1;
 }
 
 message ReadObjectReply {
@@ -29,7 +34,7 @@ message ReadObjectReply {
 
 
 message WriteObjectRequest {
-	Key key = 1;
+	ObjectId key = 1;
 	string value = 2;
 }
 
@@ -50,5 +55,5 @@ message ListServerReply {
 }
 
 message ListGlobalReply {
-	repeated Key keys = 1;	
+	repeated ObjectId keys = 1;	
 }

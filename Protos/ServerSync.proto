@@ -3,14 +3,57 @@ syntax="proto3";
 import "ClientServer.proto";
 
 service ServerSyncGrpcService {
+	rpc PropagateWrite (PropagateWriteRequest) returns (PropagateWriteResponse);
+	rpc HeartBeat (HeartBeatRequest) returns (HeartBeatReply);
+	rpc ReportCrash (ReportCrashRequest) returns (ReportCrashReply); // report dead body among us
+	
+	// REMOVE BELOW SERVICES WHEN UPGRADING TO ADVANCED
 	rpc LockObject (LockObjectRequest) returns (LockObjectReply);
 	rpc ReleaseObjectLock (ReleaseObjectLockRequest) returns (ReleaseObjectLockReply);
 	rpc RemoveCrashedServers (RemoveCrashedServersRequest) returns (RemoveCrashedServersReply);
 }
 
+message PropagateWriteRequest {
+	string sender_replica_id = 1;
+	PropagationMessage prop_msg = 2;
+}
 
+message PropagateWriteResponse {
+	// empty
+}
+
+message HeartBeatRequest {
+	// empty
+}
+
+message HeartBeatReply {
+	// empty
+}
+
+message ReportCrashRequest {
+	string dead_replica_id = 1;
+}
+
+message ReportCrashReply {
+	// empty
+}
+
+message PropagationMessage {
+	PropagationMessageId id = 1;
+	string partition_id = 2;
+	ObjectId object_id = 3;
+	ObjectVersion object_version = 4;
+	string value = 5;
+}
+
+message PropagationMessageId {
+	string author_replica_id = 1;
+	int32 counter = 2;
+}
+
+// REMOVE BELOW MESSAGES WHEN UPGRADING TO ADVANCED
 message LockObjectRequest {
-	Key key = 1;
+	ObjectId key = 1;
 }
 
 message LockObjectReply {
@@ -18,7 +61,7 @@ message LockObjectReply {
 }
 
 message ReleaseObjectLockRequest {
-	Key key = 1;
+	ObjectId key = 1;
 	string value = 2;
 }
 
@@ -34,4 +77,3 @@ message RemoveCrashedServersRequest {
 message RemoveCrashedServersReply {
 	bool success = 1;
 }
-

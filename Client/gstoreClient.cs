@@ -86,10 +86,10 @@ namespace Client
 
             ReadObjectRequest request = new ReadObjectRequest
             {
-                Key = new Key
+                Key = new ObjectId
                 {
                     PartitionId = partition_id,
-                    ObjectId = object_id
+                    ObjectKey = object_id
                 }
             };
             try
@@ -137,10 +137,10 @@ namespace Client
             int numTries = 0;
             WriteObjectRequest request = new WriteObjectRequest
             {
-                Key = new Key
+                Key = new ObjectId
                 {
                     PartitionId = partition_id,
-                    ObjectId = object_id
+                    ObjectKey = object_id
                 },
                 Value = value
             };
@@ -208,7 +208,7 @@ namespace Client
                 Console.WriteLine("Received from server: " + server_id);
                 foreach (var obj in reply.Objects)
                 {
-                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectId}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, is {server_id} partition master? {obj.IsPartitionMaster}");
                 }
             } 
             catch (RpcException e)
@@ -239,7 +239,7 @@ namespace Client
                     Console.WriteLine("Received from " + serverId);
                     foreach (var key in reply.Keys)
                     {
-                        Console.WriteLine($"object <{key.PartitionId}, {key.ObjectId}>");
+                        Console.WriteLine($"object <{key.PartitionId}, {key.ObjectKey}>");
                     }
                 }
                 catch (RpcException e)

@@ -56,7 +56,7 @@ namespace Server
         {
             Console.WriteLine("Received Read with params:");
             Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectId}");
+            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
 
             var requestedObject = new ObjectKey(request.Key);
 
@@ -76,7 +76,7 @@ namespace Server
                 
             } else
             {
-                throw new RpcException(new Status(StatusCode.NotFound, $"Object <{request.Key.PartitionId}, {request.Key.ObjectId}> not found here"));
+                throw new RpcException(new Status(StatusCode.NotFound, $"Object <{request.Key.PartitionId}, {request.Key.ObjectKey}> not found here"));
             }         
         }
 
@@ -90,7 +90,7 @@ namespace Server
         {
             Console.WriteLine("Received write with params:");
             Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectId}");
+            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
             Console.WriteLine($"Value: {request.Value}");
 
             if (MasteredPartitions.Contains(request.Key.PartitionId))
@@ -229,10 +229,10 @@ namespace Server
                 lst.Add(new ObjectInfo
                 {
                     IsPartitionMaster = MasteredPartitions.Contains(obj.Partition_id),
-                    Key = new Key
+                    Key = new ObjectId
                     {
                         PartitionId = obj.Partition_id,
-                        ObjectId = obj.Object_id
+                        ObjectKey = obj.Object_id
                     },
                     Value = KeyValuePairs[obj].Value
 
@@ -256,16 +256,16 @@ namespace Server
         public ListGlobalReply ListMeGlobal(ListGlobalRequest request)
         {
             Console.WriteLine("Received ListGlobal");
-            List<Key> lst = new List<Key>();
+            List<ObjectId> lst = new List<ObjectId>();
 
             LocalReadWriteLock.AcquireReaderLock(-1);
             foreach (var key in KeyValuePairs.Keys)
             {
                 KeyValuePairs[key].LockRead();
-                lst.Add(new Key
+                lst.Add(new ObjectId
                 {
                     PartitionId = key.Partition_id,
-                    ObjectId = key.Object_id
+                    ObjectKey = key.Object_id
                 });
                 KeyValuePairs[key].UnlockRead();
             }

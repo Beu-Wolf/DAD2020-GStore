@@ -39,7 +39,7 @@ namespace Server
         public LockObjectReply Lock(LockObjectRequest request)
         {
             Console.WriteLine("Received LockObjectRequest with params:");
-            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
+            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
 
             if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
             {
@@ -69,7 +69,7 @@ namespace Server
         public ReleaseObjectLockReply ReleaseObject(ReleaseObjectLockRequest request)
         {
             Console.WriteLine("Received ReleaseObjectLockRequest with params:");
-            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectId}\r\n");
+            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
             Console.WriteLine("Value: " + request.Value);
 
             var objectValueManager = KeyValuePairs[new ObjectKey(request.Key)];
