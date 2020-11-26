@@ -11,7 +11,7 @@ using Grpc.Net.Client;
 
 namespace Server
 {
-    public class ClientServerService : ClientServerGrpcService.ClientServerGrpcServiceBase
+    public class GStoreService : ClientServerGrpcService.ClientServerGrpcServiceBase
     {
         public string MyId { get; set; }
 
@@ -26,9 +26,9 @@ namespace Server
         private readonly ConcurrentBag<string> CrashedServers;
 
 
-        public ClientServerService() {}
+        public GStoreService() {}
 
-        public ClientServerService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
+        public GStoreService(ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs, ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
             List<string> masteredPartitions, ReaderWriterLock readerWriterLock, ConcurrentBag<string> crashedServers)
         {
             KeyValuePairs = keyValuePairs;

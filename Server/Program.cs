@@ -167,14 +167,14 @@ namespace Server
             // ReadWriteLock for listMe functions
             var localReadWriteLock = new ReaderWriterLock();
 
-            var clientServerService = new ClientServerService(keyValuePairs, ServersByPartition, serverUrls, MasteredPartitions, localReadWriteLock, CrashedServers)
+            var clientServerService = new GStoreService(keyValuePairs, ServersByPartition, serverUrls, MasteredPartitions, localReadWriteLock, CrashedServers)
             {
                 MyId = id
             };
 
             var serverSyncService = new ServerSyncService(keyValuePairs, ServersByPartition, localReadWriteLock, CrashedServers);
 
-            var puppetMasterService = new PuppetMasterServerService(ServersByPartition, serverUrls, MasteredPartitions, CrashedServers, interceptor);
+            var puppetMasterService = new PMCommunicationService(ServersByPartition, serverUrls, MasteredPartitions, CrashedServers, interceptor);
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {

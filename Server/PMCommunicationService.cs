@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 
 namespace Server
 {
-    public class PuppetMasterServerService : PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceBase
+    public class PMCommunicationService : PuppetMasterServerGrpcService.PuppetMasterServerGrpcServiceBase
     {
         public int MyPort { get; set; }
         public string MyHost { get; set; }
@@ -22,7 +22,7 @@ namespace Server
 
         private readonly DelayMessagesInterceptor Interceptor;
 
-        public PuppetMasterServerService(ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
+        public PMCommunicationService(ConcurrentDictionary<string, List<string>> serversByPartitions, ConcurrentDictionary<string, string> serverUrls,
             List<string> masteredPartitions, ConcurrentBag<string> crashedServers, DelayMessagesInterceptor interceptor)
         {
             ServersByPartition = serversByPartitions;

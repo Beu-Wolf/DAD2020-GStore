@@ -42,12 +42,7 @@ namespace Server
 
         public override Task<HeartbeatResponse> Heartbeat(HeartbeatRequest request, ServerCallContext context)
         {
-            return Task.FromResult(DoHeartbeat(request));
-        }
-
-        public HeartbeatResponse DoHeartbeat(HeartbeatRequest request)
-        {
-            return new HeartbeatResponse { };
+            return Task.FromResult(new HeartbeatResponse { });
         }
 
         public override Task<ReportCrashResponse> ReportCrash(ReportCrashRequest request, ServerCallContext context)
