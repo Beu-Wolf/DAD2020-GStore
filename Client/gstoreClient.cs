@@ -1,33 +1,21 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using Grpc.Net.Client;
 using Grpc.Core;
 using System.Linq;
-using System.Collections.Concurrent;
-using System.IO;
 
 namespace Client
 {
-
-    public class BoolWrapper
-    {
-        public object WaitForInformationLock { get; }
-        public bool Value { get; set; }
-        public BoolWrapper(bool value) 
-        { 
-            Value = value;
-            WaitForInformationLock = new object();
-        }
-    }
-
-    public class GSTOREClient
+    public class GStoreClient
     {
         // Mapping of partitions and masters
         // URL of all servers
 
         private GrpcChannel Channel { get; set; }
         private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
+        BoolWrapper ContinueExecution;
 
         private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
         private readonly ConcurrentDictionary<string, string> ServerUrls;
@@ -36,12 +24,13 @@ namespace Client
         private int Id;
 
 
-        public GSTOREClient(int id, ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers)
+        public GStoreClient(int id)
         {
             Id = id;
-            ServersIdByPartition = serversIdByPartition;
-            ServerUrls = serverUrls;
-            CrashedServers = crashedServers;
+            ContinueExecution = new BoolWrapper(false);
+            ServersIdByPartition = new ConcurrentDictionary<string, List<string>>();
+            ServerUrls = new ConcurrentDictionary<string, string>();
+            CrashedServers = new ConcurrentBag<string>();
         }
 
         public bool TryChangeCommunicationChannel(string server_id)
@@ -53,7 +42,8 @@ namespace Client
                 Channel = GrpcChannel.ForAddress(ServerUrls[server_id]);
                 Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
                 return true;
-            } catch(Exception)
+            }
+            catch (Exception)
             {
                 // Print Exception?
                 return false;
@@ -64,7 +54,7 @@ namespace Client
         {
             // Check if connected Server has requested partition
 
-            if(ServersIdByPartition[partition_id].Count == 0)
+            if (ServersIdByPartition[partition_id].Count == 0)
             {
                 Console.WriteLine($"No available server for partition {partition_id}");
                 return;
@@ -78,7 +68,8 @@ namespace Client
                     Random rnd = new Random();
                     var randomServerFromPartition = ServersIdByPartition[partition_id][rnd.Next(ServersIdByPartition[partition_id].Count)];
                     TryChangeCommunicationChannel(randomServerFromPartition);
-                } else
+                }
+                else
                 {
                     TryChangeCommunicationChannel(server_id);
                 }
@@ -96,7 +87,8 @@ namespace Client
             {
                 var reply = Client.ReadObject(request);
                 Console.WriteLine("Received: " + reply.Value);
-            } catch (RpcException e)
+            }
+            catch (RpcException e)
             {
                 // If error is because Server failed, update list of crashed Servers
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
@@ -128,9 +120,10 @@ namespace Client
                 // If not connect to first server of partition
                 TryChangeCommunicationChannel(ServersOfPartition[0]);
                 currentServerPartitionIndex = 0;
-            } else
+            }
+            else
             {
-                currentServerPartitionIndex = ServersOfPartition.IndexOf(currentServerId); 
+                currentServerPartitionIndex = ServersOfPartition.IndexOf(currentServerId);
             }
 
             var success = false;
@@ -152,12 +145,15 @@ namespace Client
                     var reply = Client.WriteObject(request);
                     Console.WriteLine("Received: " + reply.Ok);
                     success = true;
-                } catch (RpcException e)
+                }
+                catch (RpcException e)
                 {
                     if (e.Status.StatusCode == StatusCode.PermissionDenied)
                     {
                         Console.WriteLine($"Cannot write in server {currentServerId}");
-                    } else {
+                    }
+                    else
+                    {
                         // If error is because Server failed, keep it
                         if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                         {
@@ -173,7 +169,7 @@ namespace Client
                     if (++numTries < ServersOfPartition.Count)
                     {
                         // Connect to next server in list
-                        currentServerPartitionIndex = (currentServerPartitionIndex+1) % ServersOfPartition.Count;
+                        currentServerPartitionIndex = (currentServerPartitionIndex + 1) % ServersOfPartition.Count;
                         TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
                     }
 
@@ -185,7 +181,7 @@ namespace Client
             foreach (var crashedServer in crashedServers)
             {
                 foreach (var kvPair in ServersIdByPartition)
-                {                                            
+                {
                     if (kvPair.Value.Contains(crashedServer))
                     {
                         kvPair.Value.Remove(crashedServer);
@@ -210,19 +206,20 @@ namespace Client
                 {
                     Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, is {server_id} partition master? {obj.IsPartitionMaster}");
                 }
-            } 
+            }
             catch (RpcException e)
             {
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
                     UpdateCrashedServersList();
-                } else
+                }
+                else
                 {
                     throw e;
                 }
             }
 
-            
+
         }
 
         public void ListGlobal()
@@ -269,247 +266,66 @@ namespace Client
             }
             Console.WriteLine($"Server {currentServerId} is down");
         }
-    }
 
-
-    class Program { 
-    
-        static void Main(string[] args) {
-
-            if (args.Length != 4)
+        public void WaitForNetworkInformation()
+        {
+            lock (ContinueExecution.WaitForInformationLock)
             {
-                Console.WriteLine("Usage: Client.exe <host> <port> <script_file> <id>");
-                return;
+                while (!ContinueExecution.Value) Monitor.Wait(ContinueExecution.WaitForInformationLock);
             }
+        }
 
-
-            if (!int.TryParse(args[1], out int Port))
+        /*
+         * gRPC Services
+         */
+        public ClientStatusReply Status()
+        {
+            Console.WriteLine("Online Servers:");
+            foreach (var server in ServersIdByPartition)
             {
-                Console.WriteLine("Invalid port value");
-                return;
+                Console.Write("Server ");
+                server.Value.ForEach(x => Console.Write(x + " "));
+                Console.Write("from partition " + server.Key + "\r\n");
             }
-
-            if (!int.TryParse(args[3], out int id))
+            Console.WriteLine("Crashed Servers");
+            foreach (var server in CrashedServers)
             {
-                Console.WriteLine("Invalid id");
-                return;
+                Console.WriteLine($"Server {server}");
             }
+            return new ClientStatusReply();
+        }
 
-            AppContext.SetSwitch(
-    "System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
-
-            string host = args[0];
-
-            var serverIdsByPartition = new ConcurrentDictionary<string, List<string>>();
-
-            var serverUrls = new ConcurrentDictionary<string, string>();
-
-            var crashedServers = new ConcurrentBag<string>();
-
-            var client = new GSTOREClient(id, serverIdsByPartition, serverUrls, crashedServers);
-
-            BoolWrapper continueExecution = new BoolWrapper(false);
-
-            var server = new Grpc.Core.Server
+        public NetworkInformationReply NetworkInformation(NetworkInformationRequest request)
+        {
+            Console.WriteLine("Received NetworkInfo");
+            foreach (var serverUrl in request.ServerUrls)
             {
-                Services =
+                if (!ServerUrls.ContainsKey(serverUrl.Key))
                 {
-                    PuppetMasterClientGrpcService.BindService(new PuppetMasterCommunicationService(serverIdsByPartition, serverUrls, crashedServers, continueExecution))
-                },
-                Ports = { new ServerPort(host, Port, ServerCredentials.Insecure) }
-
-            };
-
-            server.Start();
-
-            // Lock until information is received
-            lock (continueExecution.WaitForInformationLock)
-            {
-                while (!continueExecution.Value) Monitor.Wait(continueExecution.WaitForInformationLock);
-            }
-
-            try {
-                string line;
-
-                string filePath = Directory.GetCurrentDirectory() + "\\" + args[2] + ".txt";
-                Console.WriteLine("File Path: " + filePath); 
-
-                System.IO.StreamReader file = new System.IO.StreamReader(filePath);
-                while ((line = file.ReadLine()) != null) 
-                {
-                    string[] cmd = line.Split((char[])null, StringSplitOptions.RemoveEmptyEntries);
-                    CommandDispatcher(cmd, file, client);
-                }
-
-                file.Close();
-
-                // We need to stay up, in order to respond to status commands by the Puppet Master
-                // Start gRPC server of connection with PM
-                // For now, just wait for user input
-                Console.ReadKey();
-
-
-
-            } catch (System.IO.FileNotFoundException) {
-                Console.WriteLine("File not found. Exiting...");
-            } finally
-            {
-                Console.ReadKey();
-                server.ShutdownAsync().Wait();
-            }
-        }
-
-        static void CommandDispatcher(string[] cmd, System.IO.StreamReader file, GSTOREClient client) {
-            switch (cmd[0]) {
-                case "read":
-                    Handle_read(cmd, client);
-                    break;
-                case "write":
-                    Handle_write(cmd, client);
-                    break;
-                case "listServer":
-                    Handle_listServer(cmd, client);
-                    break;
-                case "listGlobal":
-                    Handle_listGlobal(cmd, client);
-                    break;
-                case "wait":
-                    Handle_wait(cmd, client);
-                    break;
-                case "begin-repeat":
-                    List<string[]> commands = new List<string[]>();
-                    string line;
-                    while ((line = file.ReadLine()) != null && !line.Equals("end-repeat")) {
-                        commands.Add(line.Split());
-                    }
-                    if (line == null) {
-                        Console.WriteLine("Repeat command does not end. Exiting...");
-                    }
-                    Handle_repeat(cmd, commands, file, client);
-                    break;
-                case "end-repeat":
-                    Console.WriteLine("Invalid end-repeat: Not inside repeat statement!");
-                    break;
-                default:
-                    Console.WriteLine("Command not recognized! >:(");
-                    break;
-            }
-        }
-
-        static void Handle_read(string[] cmd, GSTOREClient client) {
-            if (cmd.Length < 3) {
-                Console.WriteLine("Invalid command format!");
-                Console.WriteLine("Use: `read <partition_id> <object_id> [<server_id>]`");
-                return;
-            }
-
-            string partitionId = cmd[1];
-            string objectId = cmd[2];
-            string serverId = string.Empty;
-            if (cmd.Length == 4)
-                serverId = cmd[3];
-
-            // Console.WriteLine($"read {partitionId} {objectId} {serverId}");
-            Console.WriteLine("read " + partitionId + " " + objectId + " " + serverId);
-
-
-            
-            if (serverId != string.Empty)
-            {
-                client.ReadObject(partitionId, objectId, serverId);
-            }
-            else
-            {
-                client.ReadObject(partitionId, objectId, "-1");
-            }
-            
-           
-        }
-        static void Handle_write(string[] cmd, GSTOREClient client) {
-            if (cmd.Length < 4) {
-                Console.WriteLine("Invalid command format!");
-                Console.WriteLine("Use: `write <partition_id> <object_id> <value>`");
-                return;
-            }
-
-            // Join value
-            string value = String.Join(' ', cmd.Skip(3));
-
-            // Verify if bigger then 4
-
-            string partitionId = cmd[1];
-            string objectId = cmd[2];
-
-            // Console.WriteLine($"write {partitionId} {objectId} {value}");
-            Console.WriteLine("write " + partitionId + " " + objectId + " " + value);
-
-            
-            client.WriteObject(partitionId, objectId, value);
-                 
-        }
-        static void Handle_listServer(string[] cmd, GSTOREClient client) {
-            if (cmd.Length != 2) {
-                Console.WriteLine("Invalid command format!");
-                Console.WriteLine("Use: `listServer <server_id>`");
-                return;
-            }
-
-            string serverId = cmd[1];
-
-            // Console.WriteLine($"listServer {serverId}");
-            Console.WriteLine("listServer " + serverId);
-
-            client.ListServer(serverId);
-            
-        }
-        static void Handle_listGlobal(string[] cmd, GSTOREClient client) {
-            if (cmd.Length != 1) {
-                Console.WriteLine("Invalid command format!");
-                Console.WriteLine("Use: `listGlobal`");
-                return;
-            }
-
-            Console.WriteLine("listGlobal");
-            client.ListGlobal();
-        }
-        static void Handle_wait(string[] cmd, GSTOREClient client) {
-            if (cmd.Length != 2) {
-                Console.WriteLine("Invalid command format!");
-                Console.WriteLine("Use: `wait <miliseconds>`");
-                return;
-            }
-
-            string miliseconds = cmd[1];
-
-            // Console.WriteLine($"listServer {miliseconds}");
-            Console.WriteLine("wait " + miliseconds);
-            if (!int.TryParse(miliseconds, out int n))
-            {
-                Console.WriteLine("Unable to parse miliseconds");
-                Environment.Exit(-1);
-            }
-            Thread.Sleep(n);
-        }
-
-        static void Handle_repeat(string[] command, List<string[]> commands, System.IO.StreamReader file, GSTOREClient client) {
-            if (!int.TryParse(command[1], out int n))
-            {
-                Console.WriteLine("Unable to parse repeat");
-                Environment.Exit(-1);
-            }
-
-            Console.WriteLine("Iterating " + n + " times");
-
-            for (var i = 1; i <= n; i++) {
-                foreach (string[] cmd in commands) {
-                    string[] tmp_command = new string[cmd.Length];
-                    for (var arg_ix = 0; arg_ix < cmd.Length; arg_ix++) {
-                        tmp_command[arg_ix] = cmd[arg_ix].Replace("$i", i.ToString());
-                    }
-                    CommandDispatcher(tmp_command, file, client);
+                    ServerUrls[serverUrl.Key] = serverUrl.Value;
                 }
             }
+            foreach (var partition in request.ServerIdsByPartition)
+            {
+                if (!ServersIdByPartition.ContainsKey(partition.Key))
+                {
+                    if (!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
+                    {
+                        throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                    }
+                }
+            }
+            lock (ContinueExecution.WaitForInformationLock)
+            {
+                ContinueExecution.Value = true;
+                Monitor.PulseAll(ContinueExecution.WaitForInformationLock);
+            }
+            return new NetworkInformationReply();
         }
 
+        public ClientPingReply Ping()
+        {
+            return new ClientPingReply();
+        }
     }
 }
