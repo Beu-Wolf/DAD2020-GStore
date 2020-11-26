@@ -8,17 +8,6 @@ using System.IO;
 namespace Client
 {
 
-    public class BoolWrapper
-    {
-        public object WaitForInformationLock { get; }
-        public bool Value { get; set; }
-        public BoolWrapper(bool value) 
-        { 
-            Value = value;
-            WaitForInformationLock = new object();
-        }
-    }
-
     class Program { 
     
         static void Main(string[] args) {

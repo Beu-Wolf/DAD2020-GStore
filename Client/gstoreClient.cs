@@ -8,6 +8,18 @@ using System.Linq;
 
 namespace Client
 {
+    public class BoolWrapper
+    {
+        public object WaitForInformationLock { get; }
+        public bool Value { get; set; }
+        public BoolWrapper(bool value)
+        {
+            Value = value;
+            WaitForInformationLock = new object();
+        }
+    }
+
+
     public class GStoreClient
     {
         // Mapping of partitions and masters
