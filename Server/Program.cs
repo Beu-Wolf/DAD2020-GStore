@@ -143,42 +143,20 @@ namespace Server
 
             string host = args[1];
 
-            // Dictionary with values
-            ConcurrentDictionary<ObjectKey, ObjectValueManager> keyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
-
-
-            // Dictionary <partition_id, List<URLs>> all servers by partition
-            ConcurrentDictionary<string, List<string>> ServersByPartition = new ConcurrentDictionary<string, List<string>>();
-
-
-            ConcurrentDictionary<string, string> serverUrls = new ConcurrentDictionary<string, string>();
-
-            // List of crashed servers
-            ConcurrentBag<string> CrashedServers = new ConcurrentBag<string>();
-
-            // List partition which im master of
-            List<string> MasteredPartitions = new List<string>(); // { Port == 10010 ? "part-1" : "part-2" };
 
             var interceptor = new DelayMessagesInterceptor(minDelay, maxDelay);
+            GStoreServer gStoreServer = new GStoreServer(id, interceptor);
 
-            // ReadWriteLock for listMe functions
-            var localReadWriteLock = new ReaderWriterLock();
-
-            var clientServerService = new GStoreService(keyValuePairs, ServersByPartition, serverUrls, MasteredPartitions, localReadWriteLock, CrashedServers)
-            {
-                MyId = id
-            };
-
-            var serverSyncService = new ServerSyncService(keyValuePairs, ServersByPartition, localReadWriteLock, CrashedServers);
-
-            var puppetMasterService = new PMCommunicationService(ServersByPartition, serverUrls, MasteredPartitions, CrashedServers, interceptor);
+            var gStoreService = new GStoreService(gStoreServer);
+            var serverSyncService = new ServerSyncService(gStoreServer);
+            var pmCommunicationService = new PMCommunicationService(gStoreServer);
 
             Grpc.Core.Server server = new Grpc.Core.Server
             {
                 Services = { 
-                    ClientServerGrpcService.BindService(clientServerService).Intercept(interceptor), 
+                    ClientServerGrpcService.BindService(gStoreService).Intercept(interceptor), 
                     ServerSyncGrpcService.BindService(serverSyncService).Intercept(interceptor),
-                    PuppetMasterServerGrpcService.BindService(puppetMasterService)
+                    PuppetMasterServerGrpcService.BindService(pmCommunicationService)
                 },
                 Ports = { new ServerPort(host, Port, ServerCredentials.Insecure)}
             };
