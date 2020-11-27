@@ -75,6 +75,7 @@ namespace PuppetMaster
                     {
                         this.PuppetMaster.ParseCommand(line);
                     }
+                    streamReader.Close();
 
                 }
                 catch (SecurityException ex)
