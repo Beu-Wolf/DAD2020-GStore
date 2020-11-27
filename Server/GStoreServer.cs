@@ -409,13 +409,8 @@ namespace Server
             Console.WriteLine("Received Partition Schema from pm");
             foreach (var partitionDetails in request.PartitionServers)
             {
-                if (!ServersByPartition.ContainsKey(partitionDetails.Key))
-                {
-                    if (!ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
-                    {
-                        throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
-                    }
-                }
+                // if already existed, do nothing
+                ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
             }
 
             foreach (var serverUrl in request.ServerUrls)
