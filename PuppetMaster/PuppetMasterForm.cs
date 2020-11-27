@@ -31,8 +31,7 @@ namespace PuppetMaster
         {
             if (logBox.InvokeRequired)
             {
-                LogDelegate ld = new LogDelegate(Log);
-                logBox.Invoke(ld, new object[] { msg });
+                logBox.Invoke(new LogDelegate(Log), new object[] { msg });
             }
             else
             {
