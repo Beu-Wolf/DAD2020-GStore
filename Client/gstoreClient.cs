@@ -147,6 +147,11 @@ namespace Client
                     PartitionId = partition_id,
                     ObjectKey = object_id
                 },
+                ObjectVersion = new ObjectVersion
+                {
+                    ClientId = Id,
+                    Counter = 1
+                },
                 Value = value
             };
             var crashedServers = new ConcurrentBag<string>();
@@ -216,7 +221,7 @@ namespace Client
                 Console.WriteLine("Received from server: " + server_id);
                 foreach (var obj in reply.Objects)
                 {
-                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}> with version <{obj.ObjectVersion.Counter}, {obj.ObjectVersion.ClientId}>");
                 }
             }
             catch (RpcException e)

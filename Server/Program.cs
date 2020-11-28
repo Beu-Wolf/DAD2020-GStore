@@ -39,6 +39,7 @@ namespace Server
     public class ObjectValueManager
     {
         public string Value;
+        public ObjectVersion ObjectVersion;
         private object WriteLock = new object();
         private bool Writing = false;
         private object NumReadersLock = new object();
@@ -48,6 +49,13 @@ namespace Server
         {
             Value = value;
         }
+
+        public ObjectValueManager(string value, ObjectVersion objectVersion)
+        {
+            Value = value;
+            ObjectVersion = objectVersion;
+        }
+
 
         public ObjectValueManager() { }
 
@@ -89,11 +97,12 @@ namespace Server
             }
         }
 
-        public void UnlockWrite(string value)
+        public void UnlockWrite(string value, ObjectVersion version)
         {
             lock(WriteLock)
             {
                 Value = value;
+                ObjectVersion = version;
                 Writing = false;
                 Monitor.PulseAll(WriteLock);
             }

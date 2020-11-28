@@ -37,20 +37,20 @@ namespace Server
         }
 
 
-        public override Task<LockObjectReply> LockObject(LockObjectRequest request, ServerCallContext context)
-        {
-            return Task.FromResult(Server.LockObject(request));
-        }
+        //public override Task<LockObjectReply> LockObject(LockObjectRequest request, ServerCallContext context)
+        //{
+        //    return Task.FromResult(Server.LockObject(request));
+        //}
 
-        public override Task<ReleaseObjectLockReply> ReleaseObjectLock(ReleaseObjectLockRequest request, ServerCallContext context)
-        {
-            return Task.FromResult(Server.ReleaseObjectLock(request));
-        }
+        //public override Task<ReleaseObjectLockReply> ReleaseObjectLock(ReleaseObjectLockRequest request, ServerCallContext context)
+        //{
+        //    return Task.FromResult(Server.ReleaseObjectLock(request));
+        //}
 
-        public override Task<RemoveCrashedServersReply> RemoveCrashedServers(RemoveCrashedServersRequest request, ServerCallContext context)
-        {
-            return Task.FromResult(Server.RemoveCrashedServers(request));
-        }
+        //public override Task<RemoveCrashedServersReply> RemoveCrashedServers(RemoveCrashedServersRequest request, ServerCallContext context)
+        //{
+        //    return Task.FromResult(Server.RemoveCrashedServers(request));
+        //}
 
     }
 }
