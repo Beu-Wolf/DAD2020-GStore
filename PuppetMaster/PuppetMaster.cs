@@ -9,6 +9,7 @@ using System.Security.Policy;
 using System.Linq;
 using System.Windows.Forms;
 using System.Threading.Channels;
+using Grpc.Core;
 
 namespace PuppetMaster
 {
@@ -259,28 +260,28 @@ namespace PuppetMaster
             switch (args[0])
             {
                 case "ReplicationFactor":
-                    Task.Run(() => HandleReplicationFactorCommand(args));
+                    HandleReplicationFactorCommand(args);
                     break;
                 case "Server":
-                    Task.Run(() => HandleServerCommand(args));
+                    HandleServerCommand(args);
                     break;
                 case "Partition":
                     HandlePartitionCommand(args);
                     break;
                 case "Client":
-                    Task.Run(() => HandleClientCommand(args));
+                    HandleClientCommand(args);
                     break;
                 case "Status":
-                    Task.Run(() => HandleStatusCommand(args));
+                    HandleStatusCommand(args);
                     break;
                 case "Crash":
-                    Task.Run(() => HandleCrashCommand(args));
+                    HandleCrashCommand(args);
                     break;
                 case "Freeze":
-                    Task.Run(() => HandleFreezeCommand(args));
+                    HandleFreezeCommand(args);
                     break;
                 case "Unfreeze":
-                    Task.Run(() => HandleUnfreezeCommand(args));
+                    HandleUnfreezeCommand(args);
                     break;
                 case "Wait":
                     HandleWaitCommand(args);
@@ -392,20 +393,21 @@ namespace PuppetMaster
                 }
             }
 
-
-            if (grpcClient.LaunchServer(new LaunchServerRequest { Id = id, Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
+            this.Form.Log("Server: launching server at " + host + ":" + port);
+            Task.Run(() =>
             {
-                this.Form.Log("Server: successfully launched server at " + host + ":" + port);
-            }
-            else
-            {
-                this.Form.Error("Server: failed launching server");
-            }
-
-            // register server
-            ServerInfo server = new ServerInfo(id, url);
-            Servers[id] = server;
-            server.Init();
+                if (grpcClient.LaunchServer(new LaunchServerRequest { Id = id, Port = port, MinDelay = min_delay, MaxDelay = max_delay }).Ok)
+                {
+                    // register server
+                    ServerInfo server = new ServerInfo(id, url);
+                    Servers[id] = server;
+                    server.Init();
+                }
+                else
+                {
+                    // this.Form.Error("Server: failed launching server");
+                }
+            });
 
             return;
 
@@ -542,15 +544,19 @@ namespace PuppetMaster
                 clientId = ++ClientCount;
             }
 
+            this.Form.Log("Client: launching client at " + host);
             try {
-                if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile , Port = port, Id = clientId }).Ok)
+                Task.Run(() =>
                 {
-                    this.Form.Log("Client: successfully launched client at " + host);
-                }
-                else
-                {
-                    this.Form.Error("Client: failed launching client");
-                }
+                    if (grpcClient.LaunchClient(new LaunchClientRequest { ScriptFile = scriptFile, Port = port, Id = clientId }).Ok)
+                    {
+                        
+                    }
+                    else
+                    {
+                        // this.Form.Error("Client: failed launching client");
+                    }
+                });
             }
             catch (Exception)
             {
@@ -584,16 +590,18 @@ namespace PuppetMaster
                 goto StatusUsage;
             }
 
-            foreach (var server in Servers.Values)
+            Task.Run(() =>
             {
-                server.Grpc.Status(new ServerStatusRequest());
-            }
+                foreach (var server in Servers.Values)
+                {
+                    server.Grpc.Status(new ServerStatusRequest());
+                }
 
-            foreach (var client in Clients.Values)
-            {
-                client.Grpc.Status(new ClientStatusRequest());
-            }
-
+                foreach (var client in Clients.Values)
+                {
+                    client.Grpc.Status(new ClientStatusRequest());
+                }
+            });
 
             return;
         StatusUsage:
@@ -620,9 +628,18 @@ namespace PuppetMaster
                 return;
             }
 
-            ServerInfo server = Servers[server_id];
-            server.Grpc.Crash(new CrashRequest());
             this.Form.Log("Crashing server " + server_id);
+            ServerInfo server = Servers[server_id];
+            Task.Run(() =>
+            {
+                try
+                {
+                    server.Grpc.Crash(new CrashRequest());
+                } catch (RpcException)
+                {
+                    // Success!
+                }
+            });
 
             return;
         CrashUsage:
@@ -649,9 +666,12 @@ namespace PuppetMaster
                 return;
             }
 
-            ServerInfo server = Servers[server_id];
-            server.FreezeServer();
             this.Form.Log("Freezing server " + server_id);
+            ServerInfo server = Servers[server_id];
+            Task.Run(() =>
+            {
+                server.FreezeServer();
+            });
 
 
             return;
@@ -679,9 +699,12 @@ namespace PuppetMaster
                 return;
             }
 
-            ServerInfo server = Servers[server_id];
-            server.WaitForFreeze();
             this.Form.Log("Unfreezing server " + server_id);
+            ServerInfo server = Servers[server_id];
+            Task.Run(() =>
+            {
+                server.WaitForFreeze();
+            });
 
             return;
         UnfreezeUsage:
