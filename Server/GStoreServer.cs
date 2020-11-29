@@ -58,20 +58,11 @@ namespace Server
             object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
             lock (objectLock)
             {
-                try
-                {
-                    Console.WriteLine("Got lock");
                     ObjectVersion newObjectVersion = GetNewVersion(objectValue.ObjectVersion, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.ObjectVersion : null);
-                    Console.WriteLine($"New version <{newObjectVersion.Counter},{newObjectVersion.ClientId}>");
                     objectValue.ObjectVersion = newObjectVersion;
                     KeyValuePairs[objectKey] = objectValue;
                     return newObjectVersion;
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.StackTrace);
-                    return null;
-                }
+               
             }
         }
 
@@ -299,7 +290,6 @@ namespace Server
 
             ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
             ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
-            Console.WriteLine("Write new version <" + newObjectVersion.Counter + "," + newObjectVersion.ClientId + ">");
             
             // Remove messages refering to same object but older
             RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
