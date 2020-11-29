@@ -17,62 +17,70 @@ namespace Server
         // Dictionary with values
         private ConcurrentDictionary<ObjectKey, ObjectInfo> KeyValuePairs;
 
-        // ReadWriteLock for listMe functions
-        private ReaderWriterLock LocalReadWriteLock;
+        // Dictionary with lock for each object
+        private ConcurrentDictionary<ObjectKey, object> ObjectLocks;
 
         public Database()
         {
             KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>();
-            LocalReadWriteLock = new ReaderWriterLock();
+            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>();
         }
 
         public bool TryGetValue(ObjectKey objectKey, out ObjectInfo objectValue)
         {
-            LocalReadWriteLock.AcquireReaderLock(-1);
-            if (!KeyValuePairs.TryGetValue(objectKey, out ObjectInfo currentObjectValue))
+            return KeyValuePairs.TryGetValue(objectKey, out objectValue);
+        }
+
+
+        public bool TryReplicaWrite(ObjectKey objectKey, ObjectInfo objectValue)
+        {
+            
+            object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
+            lock(objectLock)
             {
-                objectValue = null;
-                LocalReadWriteLock.ReleaseReaderLock();
-                return false;
-            } else
-            {
-                LocalReadWriteLock.ReleaseReaderLock();
-                objectValue = currentObjectValue;
+                if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
+                {
+                    if (CompareVersion(currentObjectValue.ObjectVersion, objectValue.ObjectVersion) > 0)
+                    {
+                        // Our version is bigger than received one, we don't care
+                        return false;
+                    }
+                }
+                KeyValuePairs[objectKey] = objectValue;
+
                 return true;
             }
         }
 
-
-        public bool TryStoreValue(ObjectKey objectKey, ObjectInfo objectValue)
+        public ObjectVersion TryClientWrite(ObjectKey objectKey, ObjectInfo objectValue)
         {
-            LocalReadWriteLock.AcquireWriterLock(-1);
-            if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
+            object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
+            lock (objectLock)
             {
-                LocalReadWriteLock.ReleaseWriterLock();
-                if (CompareVersion(currentObjectValue.ObjectVersion, objectValue.ObjectVersion) > 0)
+                try
                 {
-                    // Our version is bigger than received one, we don't care
-                    return false;
+                    Console.WriteLine("Got lock");
+                    ObjectVersion newObjectVersion = GetNewVersion(objectValue.ObjectVersion, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.ObjectVersion : null);
+                    Console.WriteLine($"New version <{newObjectVersion.Counter},{newObjectVersion.ClientId}>");
+                    objectValue.ObjectVersion = newObjectVersion;
+                    KeyValuePairs[objectKey] = objectValue;
+                    return newObjectVersion;
                 }
-                
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.StackTrace);
+                    return null;
+                }
             }
-            
-            KeyValuePairs[objectKey] = objectValue;
-            LocalReadWriteLock.ReleaseWriterLock();
-            
-            return true;
         }
 
         public List<KeyValuePair<ObjectKey, ObjectInfo>> ReadAllDatabase() {
             List<KeyValuePair<ObjectKey, ObjectInfo>> lst = new List<KeyValuePair<ObjectKey, ObjectInfo>>();
-            LocalReadWriteLock.AcquireReaderLock(-1);
 
             foreach (var obj in KeyValuePairs)
             {
                 lst.Add(obj);
             }
-                
-            LocalReadWriteLock.ReleaseReaderLock();
             return lst;
 
         }
@@ -87,6 +95,16 @@ namespace Server
             {
                 return 0;
             }
+        }
+
+        private ObjectVersion GetNewVersion(ObjectVersion clientObjectVersion, ObjectVersion storedVersion)
+        {
+            Console.WriteLine("Stored version: " + storedVersion);
+            return new ObjectVersion
+            {
+                Counter = Math.Max(clientObjectVersion.Counter, storedVersion != null ? storedVersion.Counter : 0) + 1,
+                ClientId = clientObjectVersion.ClientId
+            };
         }
     }
 
@@ -202,9 +220,6 @@ namespace Server
 
         private readonly object IncrementCounterLock = new object();
 
-        // TODO: REMOVE LATER: USED BY OLD WRITE
-        private readonly object WriteGlobalLock = new object();
-
         public GStoreServer(string myId, DelayMessagesInterceptor interceptor)
         {
             MyId = myId;
@@ -255,15 +270,14 @@ namespace Server
             Console.WriteLine($"Value: {request.Object.Value}");
             Console.WriteLine($"ObjectVersion: <{request.Object.ObjectVersion.Counter}, {request.Object.ObjectVersion.ClientId}>");
 
-            // Compute new Object Version
-            ObjectVersion newObjectVersion = GetNewVersion(request.Object.ObjectVersion, new ObjectKey(request.Object.Key));
+            
 
             ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
-            if(Database.TryStoreValue(receivedObjectKey, request.Object))
-            {
-                // Remove messages refering to same object but older
-                RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
-            }
+            ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
+            Console.WriteLine("Write new version <" + newObjectVersion.Counter + "," + newObjectVersion.ClientId + ">");
+            
+            // Remove messages refering to same object but older
+            RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
             
             PropagationMessage propagationMessage = new PropagationMessage
             {
@@ -277,7 +291,6 @@ namespace Server
                 ObjectVersion = request.Object.ObjectVersion,
                 Value = request.Object.Value
             };
-
             
             BoolWrapper waitForFirstAck = new BoolWrapper(false);
 
@@ -359,60 +372,6 @@ namespace Server
         }
 
 
-        // OLD VERSION
-        //public LockObjectReply LockObject(LockObjectRequest request)
-        //{
-        //    Console.WriteLine("Received LockObjectRequest with params:");
-        //    Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
-
-        //    if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
-        //    {
-        //        LocalReadWriteLock.AcquireWriterLock(-1);
-        //        objectValueManager = new ObjectValueManager();
-        //        KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
-        //        objectValueManager.LockWrite();
-        //        LocalReadWriteLock.ReleaseWriterLock();
-        //    }
-        //    else
-        //    {
-        //        objectValueManager.LockWrite();
-        //    }
-
-
-        //    return new LockObjectReply
-        //    {
-        //        Success = true
-        //    };
-        //}
-
-        //public ReleaseObjectLockReply ReleaseObjectLock(ReleaseObjectLockRequest request)
-        //{
-        //    Console.WriteLine("Received ReleaseObjectLockRequest with params:");
-        //    Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
-        //    Console.WriteLine("Value: " + request.Value);
-
-        //    var objectValueManager = KeyValuePairs[new ObjectKey(request.Key)];
-
-        //    objectValueManager.UnlockWrite(request.Value);
-
-        //    return new ReleaseObjectLockReply
-        //    {
-        //        Success = true
-        //    };
-        //}
-
-        //public RemoveCrashedServersReply RemoveCrashedServers(RemoveCrashedServersRequest request)
-        //{
-        //    CrashedServers.Union(request.ServerIds);
-        //    ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerIds.Contains(x));
-        //    return new RemoveCrashedServersReply
-        //    {
-        //        Success = true
-        //    };
-        //}
-
-
-
         /*
          *  PMCommunicationService Implementation
          */
@@ -488,26 +447,10 @@ namespace Server
                 }
             }
 
-            // WE WILL NO LONGER USE PARTITION MASTERS
-            //foreach (var masteredPartition in request.MasteredPartitions.PartitionIds)
-            //{
-            //    MasteredPartitions.Add(masteredPartition);
-            //}
-
             return new PartitionSchemaReply();
         }
 
         
-
-        private ObjectVersion GetNewVersion(ObjectVersion clientObjectVersion, ObjectKey objectKey) 
-        {
-            return new ObjectVersion
-            {
-                Counter = Math.Max(clientObjectVersion.Counter, Database.TryGetValue(objectKey, out var objectValue) ? objectValue.ObjectVersion.Counter : 0) + 1,
-                ClientId = clientObjectVersion.ClientId
-            };
-        }
-
         private int IncrementMessageCounter()
         {
             lock(IncrementCounterLock)
