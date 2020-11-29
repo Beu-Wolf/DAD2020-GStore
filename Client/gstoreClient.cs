@@ -83,7 +83,9 @@ namespace Client
                 return false;
             }
 
-            foreach (var serverId in ServersIdByPartition[partition_id])
+            // connect to a random partition server
+            Random rnd = new Random();
+            foreach (var serverId in ServersIdByPartition[partition_id].OrderBy(x => rnd.Next()))
             {
                 if(TryConnectToServer(serverId))
                 {
