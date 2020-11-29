@@ -43,6 +43,18 @@ namespace Client
             ServersIdByPartition = new ConcurrentDictionary<string, List<string>>();
             ServerUrls = new ConcurrentDictionary<string, string>();
             CrashedServers = new ConcurrentBag<string>();
+            ObjectCache = new Cache();
+        }
+
+        private void HandleCrashedServer(string server_id)
+        {
+            Console.WriteLine($"Reporting crashed server: {server_id}");
+            CrashedServers.Add(server_id);
+            foreach (var partition in ServersIdByPartition.Values)
+            {
+                // if item doesn't exist, Remove returns false
+                partition.Remove(server_id);
+            }
         }
 
         private bool TryConnectToServer(string server_id)
