@@ -19,7 +19,7 @@ message ObjectVersion {
 
 message ObjectInfo {
 	ObjectId key = 1;
-	ObjectVersion objectVersion = 2;
+	ObjectVersion version = 2;
 	string value = 3;
 
 }
