@@ -73,17 +73,17 @@ namespace PuppetMaster
             public void SendInformationToServer()
             {
                 var request = new PartitionSchemaRequest();
-                List<string> mastered = new List<string>();
+                //List<string> mastered = new List<string>();
                 foreach (var partition in Partitions)
                 {
                     request.PartitionServers[partition.Key] = new PartitionInfo
                     {
                         ServerIds = { partition.Value.ServerIds }
                     };
-                    if (partition.Value.ServerIds[0] == Id)
-                    { // server master of this partition
-                        mastered.Add(partition.Key);
-                    }
+                    //if (partition.Value.ServerIds[0] == Id)
+                    //{ // server master of this partition
+                    //    mastered.Add(partition.Key);
+                    //}
                 }
 
                 foreach (var server in Servers.Values)
@@ -91,10 +91,10 @@ namespace PuppetMaster
                     request.ServerUrls[server.Id] = server.Url;
                 }
 
-                request.MasteredPartitions = new MasteredInfo
-                {
-                    PartitionIds = { mastered }
-                };
+                //request.MasteredPartitions = new MasteredInfo
+                //{
+                //    PartitionIds = { mastered }
+                //};
 
                 Grpc.PartitionSchema(request);
             }

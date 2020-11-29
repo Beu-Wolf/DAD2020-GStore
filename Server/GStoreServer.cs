@@ -1,6 +1,5 @@
 ﻿using Grpc.Core;
 using Grpc.Core.Interceptors;
-using Grpc.Core;
 using Grpc.Core.Utils;
 using Grpc.Net.Client;
 using System;
@@ -8,16 +7,185 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 
 namespace Server
 {
+
+    public class Database
+    {
+        // Dictionary with values
+        private ConcurrentDictionary<ObjectKey, ObjectInfo> KeyValuePairs;
+
+        // Dictionary with lock for each object
+        private ConcurrentDictionary<ObjectKey, object> ObjectLocks;
+
+        public Database()
+        {
+            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>();
+            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>();
+        }
+
+        public bool TryGetValue(ObjectKey objectKey, out ObjectInfo objectValue)
+        {
+            return KeyValuePairs.TryGetValue(objectKey, out objectValue);
+        }
+
+
+        public bool TryReplicaWrite(ObjectKey objectKey, ObjectInfo objectValue)
+        {
+            
+            object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
+            lock(objectLock)
+            {
+                if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
+                {
+                    if (CompareVersion(currentObjectValue.ObjectVersion, objectValue.ObjectVersion) > 0)
+                    {
+                        // Our version is bigger than received one, we don't care
+                        return false;
+                    }
+                }
+                KeyValuePairs[objectKey] = objectValue;
+
+                return true;
+            }
+        }
+
+        public ObjectVersion TryClientWrite(ObjectKey objectKey, ObjectInfo objectValue)
+        {
+            object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
+            lock (objectLock)
+            {
+                ObjectVersion newObjectVersion = GetNewVersion(objectValue.ObjectVersion, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.ObjectVersion : null);
+                objectValue.ObjectVersion = newObjectVersion;
+                KeyValuePairs[objectKey] = objectValue;
+                return newObjectVersion;
+            }
+        }
+
+        public List<KeyValuePair<ObjectKey, ObjectInfo>> ReadAllDatabase() {
+            List<KeyValuePair<ObjectKey, ObjectInfo>> lst = new List<KeyValuePair<ObjectKey, ObjectInfo>>();
+
+            foreach (var obj in KeyValuePairs)
+            {
+                lst.Add(obj);
+            }
+            return lst;
+
+        }
+
+        private int CompareVersion(ObjectVersion ov1, ObjectVersion ov2)
+        {
+            if (ov1.Counter > ov2.Counter || (ov1.Counter == ov2.Counter && ov1.ClientId > ov2.ClientId))
+            {
+                return 1;
+            }
+            else
+            {
+                return 0;
+            }
+        }
+
+        private ObjectVersion GetNewVersion(ObjectVersion clientObjectVersion, ObjectVersion storedVersion)
+        {
+            Console.WriteLine("Stored version: " + storedVersion);
+            return new ObjectVersion
+            {
+                Counter = Math.Max(clientObjectVersion.Counter, storedVersion != null ? storedVersion.Counter : 0) + 1,
+                ClientId = clientObjectVersion.ClientId
+            };
+        }
+    }
+
+
+    public class BoolWrapper
+    {
+        public object WaitForInformationLock { get; }
+        public bool Value { get; set; }
+        public BoolWrapper(bool value)
+        {
+            Value = value;
+            WaitForInformationLock = new object();
+        }
+    }
+
+
+    public class RetransmissionBuffer
+    {
+        // <sender_replica_id, ReceivedMessages>
+        private ConcurrentDictionary<string, ReceivedMessages> ReplicaReceivedMessages = new ConcurrentDictionary<string, ReceivedMessages>();
+
+        internal object OperationLock = new object();
+
+        internal class ReceivedMessages
+        {
+            // <partition_id, ObjectMessages>
+            internal ConcurrentDictionary<string, ObjectMessages> PartitionMessages = new ConcurrentDictionary<string, ObjectMessages>();
+
+            internal ReceivedMessages(string senderReplicaId, PropagationMessage propagationMessage)
+            {
+                PartitionMessages[senderReplicaId] = new ObjectMessages(propagationMessage);
+            }
+
+            internal void RemoveObject(ObjectKey objectKey)
+            {
+                
+                foreach (var partition in PartitionMessages.Keys)
+                {
+                    PartitionMessages[partition].MessagesByPartition.Remove(objectKey, out PropagationMessage propagationMessage);     
+                }
+            }
+        }
+
+        internal class ObjectMessages
+        {
+            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>();
+            
+            internal ObjectMessages(PropagationMessage propagationMessage)
+            {
+                MessagesByPartition[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
+            }
+        
+        }
+
+        public void RemoveObjectFromBuffer(ObjectKey objectKey)
+        {
+            lock(OperationLock)
+            {
+                foreach (var replicaId in ReplicaReceivedMessages.Keys)
+                {
+                    ReplicaReceivedMessages[replicaId].RemoveObject(objectKey);
+                }
+            }
+           
+        }
+
+        public void AddNewMessage(string senderReplicaId, PropagationMessage propagationMessage)
+        {
+            lock(OperationLock)
+            {
+                if(!ReplicaReceivedMessages.ContainsKey(senderReplicaId))
+                {
+                    ReplicaReceivedMessages[senderReplicaId] = new ReceivedMessages(senderReplicaId, propagationMessage);
+                } else if (!ReplicaReceivedMessages[senderReplicaId].PartitionMessages.ContainsKey(propagationMessage.PartitionId))
+                {
+                    ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId] = new ObjectMessages(propagationMessage);
+                } else
+                {
+                    ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId].MessagesByPartition[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
+                }
+            }
+
+        }
+    }
+
+
     public class GStoreServer
     {
         private string MyId { get; }
 
-        // Dictionary with values
-        private ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
-
+        private Database Database;
 
         // Dictionary <partition_id, List<URLs>> all servers by partition
         private ConcurrentDictionary<string, List<string>> ServersByPartition;
@@ -28,29 +196,33 @@ namespace Server
         // List of crashed servers
         private ConcurrentBag<string> CrashedServers;
 
+        // ReplicaId that I must watch (by partition)
+        private ConcurrentDictionary<string, string> WatchedReplicas;
+
+        private RetransmissionBuffer RetransmissionBuffer;
+
         // List partition which im master of
-        private List<string> MasteredPartitions;
-
-        // ReadWriteLock for listMe functions
-        private ReaderWriterLock LocalReadWriteLock;
-
+        // private List<string> MasteredPartitions;
 
         private readonly DelayMessagesInterceptor Interceptor;
 
-        // TODO: REMOVE LATER: USED BY OLD WRITE
-        private readonly object WriteGlobalLock = new object();
+        private int MessageCounter = 0;
+
+        private readonly object IncrementCounterLock = new object();
 
         public GStoreServer(string myId, DelayMessagesInterceptor interceptor)
         {
             MyId = myId;
             Interceptor = interceptor;
-            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectValueManager>(new ObjectKey.ObjectKeyComparer());
+            Database = new Database();
             ServersByPartition = new ConcurrentDictionary<string, List<string>>();
             ServerUrls = new ConcurrentDictionary<string, string>();
             CrashedServers = new ConcurrentBag<string>();
-            MasteredPartitions = new List<string>();
-            LocalReadWriteLock = new ReaderWriterLock();
+            WatchedReplicas = new ConcurrentDictionary<string, string>();
+            RetransmissionBuffer = new RetransmissionBuffer();
         }
+
+        
 
         /*
          *  GStoreService Implementation
@@ -63,23 +235,14 @@ namespace Server
 
             var requestedObject = new ObjectKey(request.Key);
 
-
-            if (KeyValuePairs.TryGetValue(requestedObject, out ObjectValueManager objectValueManager))
+            if (Database.TryGetValue(requestedObject, out ObjectInfo objectInfo))
             {
 
-                LocalReadWriteLock.AcquireReaderLock(-1);
-                objectValueManager.LockRead();
+
                 ReadObjectReply reply = new ReadObjectReply
                 {
-                    Object = new ObjectInfo
-                    {
-                        Key = request.Key,
-                        Value = objectValueManager.Value
-                    }
+                    Object = objectInfo
                 };
-                objectValueManager.UnlockRead();
-
-                LocalReadWriteLock.ReleaseReaderLock();
                 return reply;
 
             }
@@ -92,125 +255,51 @@ namespace Server
         public WriteObjectReply Write(WriteObjectRequest request)
         {
             Console.WriteLine("Received write with params:");
-            Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
-            Console.WriteLine($"Value: {request.Value}");
+            Console.WriteLine($"Partition_id: {request.Object.Key.PartitionId}");
+            Console.WriteLine($"Object_id: {request.Object.Key.ObjectKey}");
+            Console.WriteLine($"Value: {request.Object.Value}");
+            Console.WriteLine($"ObjectVersion: <{request.Object.ObjectVersion.Counter}, {request.Object.ObjectVersion.ClientId}>");
 
-            if (MasteredPartitions.Contains(request.Key.PartitionId))
+            
+
+            ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
+            ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
+            
+            // Remove messages refering to same object but older
+            RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
+            
+            PropagationMessage propagationMessage = new PropagationMessage
             {
-                lock (WriteGlobalLock)
+                Id = new PropagationMessageId
                 {
-                    // I'm master of this object's partition
-                    // Send request to all other servers of partition
-                    ServersByPartition.TryGetValue(request.Key.PartitionId, out List<string> serverIds);
+                    AuthorReplicaId = MyId,
+                    Counter = IncrementMessageCounter()
+                },
+                PartitionId = receivedObjectKey.Partition_id,
+                ObjectId = request.Object.Key,
+                ObjectVersion = request.Object.ObjectVersion,
+                Value = request.Object.Value
+            };
+            
+            BoolWrapper waitForFirstAck = new BoolWrapper(false);
 
-                    if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
-                    {
-                        LocalReadWriteLock.AcquireWriterLock(-1);
-                        objectValueManager = new ObjectValueManager();
-                        KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
-                        objectValueManager.LockWrite();
-                        LocalReadWriteLock.ReleaseWriterLock();
-                    }
-                    else
-                    {
-                        objectValueManager.LockWrite();
-                    }
-
-                    var connectionCrashedServers = new HashSet<string>();
-
-                    foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
-                    {
-
-                        var channel = GrpcChannel.ForAddress(server.Value);
-                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-                        // What to do if success returns false ?
-                        try
-                        {
-                            client.LockObject(new LockObjectRequest
-                            {
-                                Key = request.Key
-                            });
-                        }
-                        catch (RpcException e)
-                        {
-                            // If grpc does no respond, we can assume it has crashed
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
-                            {
-                                // Add to hash Set
-                                Console.WriteLine($"Server {server.Key} has crashed");
-                                connectionCrashedServers.Add(server.Key);
-                            }
-                            else
-                            {
-                                throw e;
-                            }
-                        }
-                    }
-
-                    foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
-                    {
-                        try
-                        {
-                            var channel = GrpcChannel.ForAddress(server.Value);
-                            var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-                            // What to do if success returns false ?
-                            client.ReleaseObjectLock(new ReleaseObjectLockRequest
-                            {
-                                Key = request.Key,
-                                Value = request.Value
-
-                            });
-                        }
-                        catch (RpcException e)
-                        {
-                            if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
-                            {
-                                // Add to hash Set
-                                Console.WriteLine($"Server {server.Key} has crashed");
-                                connectionCrashedServers.Add(server.Key);
-                            }
-                            else
-                            {
-                                throw e;
-                            }
-                        }
-                    }
-
-
-                    if (connectionCrashedServers.Any())
-                    {
-                        // Update the crashed servers
-                        UpdateCrashedServers(request.Key.PartitionId, connectionCrashedServers);
-
-                        // Contact Partition slaves an update their view of the partition
-                        foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
-                        {
-                            var channel = GrpcChannel.ForAddress(server.Value);
-                            var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
-
-                            client.RemoveCrashedServers(new RemoveCrashedServersRequest
-                            {
-                                PartitionId = request.Key.PartitionId,
-                                ServerIds = { connectionCrashedServers }
-
-                            });
-                        }
-                    }
-
-                    objectValueManager.UnlockWrite(request.Value);
-
-                    return new WriteObjectReply
-                    {
-                        Ok = true
-                    };
-                }
-            }
-            else
+              
+            // Paralelyze
+            Task.Run(() =>
             {
-                // Tell him I'm not the master
-                throw new RpcException(new Status(StatusCode.PermissionDenied, $"Server {MyId} is not the master of partition {request.Key.PartitionId}"));
+                BroadcastMessage(waitForFirstAck, propagationMessage.PartitionId, propagationMessage);
+            });
+            
+
+            // Lock this thread
+            lock(waitForFirstAck.WaitForInformationLock)
+            {
+                while (!waitForFirstAck.Value) Monitor.Wait(waitForFirstAck.WaitForInformationLock);
             }
+            return new WriteObjectReply
+            {
+                NewVersion = newObjectVersion
+            };
 
         }
 
@@ -220,24 +309,9 @@ namespace Server
 
             List<ObjectInfo> lst = new List<ObjectInfo>();
 
-            LocalReadWriteLock.AcquireReaderLock(-1);
-            foreach (ObjectKey obj in KeyValuePairs.Keys)
-            {
-                KeyValuePairs[obj].LockRead();
-                lst.Add(new ObjectInfo
-                {
-                    // IsPartitionMaster = MasteredPartitions.Contains(obj.Partition_id),
-                    Key = new ObjectId
-                    {
-                        PartitionId = obj.Partition_id,
-                        ObjectKey = obj.Object_id
-                    },
-                    Value = KeyValuePairs[obj].Value
+            List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
 
-                });
-                KeyValuePairs[obj].UnlockRead();
-            }
-            LocalReadWriteLock.ReleaseReaderLock();
+            databaseObjects.ForEach(x => lst.Add(x.Value));
 
             return new ListServerReply
             {
@@ -251,30 +325,18 @@ namespace Server
             Console.WriteLine("Received ListGlobal");
             List<ObjectId> lst = new List<ObjectId>();
 
-            LocalReadWriteLock.AcquireReaderLock(-1);
-            foreach (var key in KeyValuePairs.Keys)
+            List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
+
+            databaseObjects.ForEach(x => lst.Add( new ObjectId
             {
-                KeyValuePairs[key].LockRead();
-                lst.Add(new ObjectId
-                {
-                    PartitionId = key.Partition_id,
-                    ObjectKey = key.Object_id
-                });
-                KeyValuePairs[key].UnlockRead();
-            }
-            LocalReadWriteLock.ReleaseReaderLock();
+                PartitionId = x.Key.Partition_id,
+                ObjectKey = x.Key.Object_id
+            }));
 
             return new ListGlobalReply
             {
                 Keys = { lst }
             };
-        }
-
-        private void UpdateCrashedServers(string partition, HashSet<string> crashedServers)
-        {
-            CrashedServers.Union(crashedServers);
-
-            ServersByPartition[partition].RemoveAll(x => crashedServers.Contains(x));
         }
 
 
@@ -283,6 +345,8 @@ namespace Server
          */
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
+            Console.WriteLine("Received Propagate Write");
+            
             return new PropagateWriteResponse { };
         }
 
@@ -295,59 +359,6 @@ namespace Server
         {
             return new ReportCrashResponse { };
         }
-
-        // OLD VERSION
-        public LockObjectReply LockObject(LockObjectRequest request)
-        {
-            Console.WriteLine("Received LockObjectRequest with params:");
-            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
-
-            if (!KeyValuePairs.TryGetValue(new ObjectKey(request.Key), out ObjectValueManager objectValueManager))
-            {
-                LocalReadWriteLock.AcquireWriterLock(-1);
-                objectValueManager = new ObjectValueManager();
-                KeyValuePairs[new ObjectKey(request.Key)] = objectValueManager;
-                objectValueManager.LockWrite();
-                LocalReadWriteLock.ReleaseWriterLock();
-            }
-            else
-            {
-                objectValueManager.LockWrite();
-            }
-
-
-            return new LockObjectReply
-            {
-                Success = true
-            };
-        }
-
-        public ReleaseObjectLockReply ReleaseObjectLock(ReleaseObjectLockRequest request)
-        {
-            Console.WriteLine("Received ReleaseObjectLockRequest with params:");
-            Console.Write($"Key: \r\n PartitionId: {request.Key.PartitionId} \r\n ObjectId: {request.Key.ObjectKey}\r\n");
-            Console.WriteLine("Value: " + request.Value);
-
-            var objectValueManager = KeyValuePairs[new ObjectKey(request.Key)];
-
-            objectValueManager.UnlockWrite(request.Value);
-
-            return new ReleaseObjectLockReply
-            {
-                Success = true
-            };
-        }
-
-        public RemoveCrashedServersReply RemoveCrashedServers(RemoveCrashedServersRequest request)
-        {
-            CrashedServers.Union(request.ServerIds);
-            ServersByPartition[request.PartitionId].RemoveAll(x => request.ServerIds.Contains(x));
-            return new RemoveCrashedServersReply
-            {
-                Success = true
-            };
-        }
-
 
 
         /*
@@ -425,12 +436,58 @@ namespace Server
                 }
             }
 
-            foreach (var masteredPartition in request.MasteredPartitions.PartitionIds)
-            {
-                MasteredPartitions.Add(masteredPartition);
-            }
-
             return new PartitionSchemaReply();
         }
+
+        
+        private int IncrementMessageCounter()
+        {
+            lock(IncrementCounterLock)
+            {
+                MessageCounter++;
+                return MessageCounter;
+            }
+        }
+
+        private void BroadcastMessage(BoolWrapper waitForFirstAck, string partitionId, PropagationMessage propagationMessage)
+        {
+            foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId))
+            {
+                PropagateWrite(server.Key, server.Value, waitForFirstAck, propagationMessage);
+            } 
+        }
+
+        private void PropagateWrite(string serverId, string serverUrl, BoolWrapper waitForFirstAck, PropagationMessage propagationMessage)
+        {
+            try
+            {
+                var channel = GrpcChannel.ForAddress(serverUrl);
+                var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                PropagateWriteResponse response = client.PropagateWrite(new PropagateWriteRequest
+                {
+                    SenderReplicaId = serverId,
+                    PropMsg = propagationMessage
+                });
+                // successful
+                lock(waitForFirstAck.WaitForInformationLock)
+                {
+                    waitForFirstAck.Value = true;
+                    Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
+                }
+            }
+            catch (RpcException e)
+            {
+                if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
+                {
+                    // Trigger crash event for the server that crashed
+                    
+                }
+                else
+                {
+                    throw e;
+                }
+            }
+        }
+
     }
 }

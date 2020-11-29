@@ -19,8 +19,9 @@ message ObjectVersion {
 
 message ObjectInfo {
 	ObjectId key = 1;
-	string value = 2;
-	ObjectVersion version = 3;
+	ObjectVersion objectVersion = 2;
+	string value = 3;
+
 }
 
 message ReadObjectRequest {
@@ -33,12 +34,11 @@ message ReadObjectReply {
 
 
 message WriteObjectRequest {
-	ObjectId key = 1;
-	string value = 2;
+	ObjectInfo object = 1;
 }
 
 message WriteObjectReply {
-	bool ok = 1;
+	ObjectVersion newVersion = 1;
 }
 
 message ListServerRequest {

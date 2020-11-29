@@ -36,73 +36,7 @@ namespace Server
         }
     }
 
-    public class ObjectValueManager
-    {
-        public string Value;
-        private object WriteLock = new object();
-        private bool Writing = false;
-        private object NumReadersLock = new object();
-        private int NumReaders = 0;
-
-        public ObjectValueManager(string value)
-        {
-            Value = value;
-        }
-
-        public ObjectValueManager() { }
-
-        public void LockRead()
-        {
-            lock (WriteLock)
-            {
-                while (Writing) Monitor.Wait(WriteLock);
-
-                lock(NumReadersLock)
-                {
-                    NumReaders++;
-                }
-                
-            }
-        }
-
-        public void UnlockRead()
-        {
-            lock(NumReadersLock)
-            {
-                NumReaders--;
-                if (NumReaders == 0) Monitor.PulseAll(NumReadersLock);
-            }
-        }
-
-        public void LockWrite()
-        {
-            lock(WriteLock)
-            {
-                while (Writing) Monitor.Wait(WriteLock);
-                
-                lock(NumReadersLock)
-                {
-                    while (NumReaders != 0) Monitor.Wait(NumReadersLock);
-                    Writing = true;
-                }
-                
-            }
-        }
-
-        public void UnlockWrite(string value)
-        {
-            lock(WriteLock)
-            {
-                Value = value;
-                Writing = false;
-                Monitor.PulseAll(WriteLock);
-            }
-        }
-
-        
-    }
-
-    public class Program
+   public class Program
     {
 
         static void Main(string[] args)

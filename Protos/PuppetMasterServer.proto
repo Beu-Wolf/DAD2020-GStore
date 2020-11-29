@@ -53,14 +53,10 @@ message PartitionInfo {
 	repeated string serverIds = 1;
 }
 
-message MasteredInfo {
-	repeated string partitionIds = 1;
-}
 
 message PartitionSchemaRequest {
 	map<string, PartitionInfo> partitionServers = 1;
 	map<string, string> serverUrls = 2;
-	MasteredInfo masteredPartitions = 3;
 }
 
 message PartitionSchemaReply {

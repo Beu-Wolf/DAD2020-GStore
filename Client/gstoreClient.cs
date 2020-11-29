@@ -161,12 +161,20 @@ namespace Client
             int numTries = 0;
             WriteObjectRequest request = new WriteObjectRequest
             {
-                Key = new ObjectId
+                Object = new ObjectInfo
                 {
-                    PartitionId = partition_id,
-                    ObjectKey = object_id
-                },
-                Value = value
+                    Key = new ObjectId
+                    {
+                        PartitionId = partition_id,
+                        ObjectKey = object_id
+                    },
+                    ObjectVersion = new ObjectVersion
+                    {
+                        ClientId = Id,
+                        Counter = 1
+                    },
+                    Value = value
+                }                      
             };
             var crashedServers = new ConcurrentBag<string>();
             while (!success && numTries < ServersOfPartition.Count)
