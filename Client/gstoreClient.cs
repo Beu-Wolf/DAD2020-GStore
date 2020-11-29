@@ -69,8 +69,8 @@ namespace Client
             }
             catch (Exception)
             {
-                // Print Exception?
-                // Add to crashed servers?
+                Console.WriteLine($"Failed to connect to server {server_id}");
+                HandleCrashedServer(server_id);
                 return false;
             }
         }
