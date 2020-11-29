@@ -59,12 +59,12 @@ namespace Client
 
         private bool TryConnectToServer(string server_id)
         {
-            Console.WriteLine("Trying to connect to " + server_id);
             try
             {
                 currentServerId = server_id;
                 Channel = GrpcChannel.ForAddress(ServerUrls[server_id]);
                 ConnectedServer = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
+                Console.WriteLine($"Connected to server {server_id}");
                 return true;
             }
             catch (Exception)
@@ -96,26 +96,26 @@ namespace Client
 
         public void ReadObject(string partition_id, string object_id, string server_id)
         {
-            
+            Console.WriteLine($"[READ] Requesting read: <{partition_id},{object_id}>");
             if (server_id != string.Empty)
             { // we have to connect to a specific server
                 
                 if (!ServersIdByPartition[partition_id].Contains(currentServerId))
                 { // specified server does not belong to the asked partition!
-                    Console.WriteLine($"Specified server does not belong to partition {partition_id}");
+                    Console.WriteLine($"[READ] Specified server does not belong to partition {partition_id}");
                     return;
                 }
 
                 if(!TryConnectToServer(server_id))
                 {
-                    Console.WriteLine($"Could not connect to server {server_id}");
+                    Console.WriteLine($"[READ] Could not connect to server {server_id}");
                     return;
                 }
             } else
             {
                 if(!TryConnectToPartition(partition_id))
                 {
-                    Console.WriteLine($"Could not connect to any server from partition {partition_id}");
+                    Console.WriteLine($"[READ] Could not connect to any server from partition {partition_id}");
                     return;
                 }
             }
@@ -143,9 +143,9 @@ namespace Client
                 }
 
                 // TODO: non-existing objects will generate an exception
-                Console.WriteLine($"Error: {e.Status.StatusCode}");
-                Console.WriteLine($"Error message: {e.Status.Detail}");
-                Console.WriteLine("N/A");
+                Console.WriteLine($"[READ] Error: {e.Status.StatusCode}");
+                Console.WriteLine($"[READ] Error message: {e.Status.Detail}");
+                Console.WriteLine("[READ] N/A");
                 return;
             }
 
