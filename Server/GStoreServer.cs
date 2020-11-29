@@ -3,6 +3,7 @@ using Grpc.Core.Interceptors;
 using Grpc.Core.Utils;
 using Grpc.Net.Client;
 using System;
+using System.Timers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
@@ -141,6 +142,16 @@ namespace Server
         
         }
 
+        public List<PropagationMessage> GetReplicaPropMessages(string replicaId)
+        {
+            lock(OperationLock)
+            {
+                List<PropagationMessage> lst = new List<PropagationMessage>();
+                ReplicaReceivedMessages[replicaId].PartitionMessages.Keys.ToList().ForEach(x => lst.AddRange(ReplicaReceivedMessages[replicaId].PartitionMessages[x].MessagesByPartition.Values));
+                return lst;
+            }
+        }
+
         public void RemoveObjectFromBuffer(ObjectKey objectKey)
         {
             lock(OperationLock)
@@ -169,6 +180,11 @@ namespace Server
                 }
             }
 
+        }
+
+        public void RemoveReplica(string deadReplicaId)
+        {
+            ReplicaReceivedMessages.Remove(deadReplicaId, out ReceivedMessages receivedMessages);
         }
     }
 
@@ -202,6 +218,8 @@ namespace Server
 
         private readonly object IncrementCounterLock = new object();
 
+        private static System.Timers.Timer HeartbeatTimer;
+
         // TODO: REMOVE LATER: USED BY OLD WRITE
         private readonly object WriteGlobalLock = new object();
 
@@ -215,9 +233,19 @@ namespace Server
             CrashedServers = new ConcurrentBag<string>();
             WatchedReplicas = new ConcurrentDictionary<string, string>();
             RetransmissionBuffer = new RetransmissionBuffer();
+
+            SetHeartbeatTimer();
         }
 
-        
+        private void SetHeartbeatTimer()
+        {
+            HeartbeatTimer = new System.Timers.Timer(5000);
+            HeartbeatTimer.Elapsed += HeartbeatEvent;
+            HeartbeatTimer.AutoReset = true;
+            HeartbeatTimer.Enabled = true;
+        }
+
+
 
         /*
          *  GStoreService Implementation
@@ -341,6 +369,31 @@ namespace Server
         /*
          *  ServerSyncService Implementation
          */
+
+        public void HeartbeatEvent(Object source, ElapsedEventArgs eventArgs)
+        {
+            foreach (var watchedReplica in WatchedReplicas)
+            {
+                try
+                {
+                    var channel = GrpcChannel.ForAddress(ServerUrls[watchedReplica.Value]);
+                    var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+
+                    client.Heartbeat(new HeartbeatRequest());
+                } catch (RpcException exception)
+                {
+                    if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
+                    {
+                        PropagateCrash(watchedReplica.Value);
+                    }
+                    else
+                    {
+                        throw exception;
+                    }
+                }
+            }
+        }
+
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
             Console.WriteLine("Received Propagate Write");
@@ -350,11 +403,61 @@ namespace Server
 
         public HeartbeatResponse Heartbeat()
         {
+            Console.WriteLine("Heartbeat Received");
             return new HeartbeatResponse { };
+        }
+
+        public void PropagateCrash(string deadReplicaId)
+        {
+            // Remove replica from correct replicas
+            CrashedServers.Add(deadReplicaId);
+            foreach (var serversByPartition in ServersByPartition)
+            {
+                serversByPartition.Value.Remove(deadReplicaId);
+            }
+
+            // broadcast buffered replica messages
+            // Do we need it to be parallel?
+            var propMessages = RetransmissionBuffer.GetReplicaPropMessages(deadReplicaId);
+            propMessages.ForEach(x =>
+            {
+                BroadcastMessage(new BoolWrapper(false), x.PartitionId, x);
+            });
+
+            // Remove buffered replica messages
+            RetransmissionBuffer.RemoveReplica(deadReplicaId);
+
+            // Update watched replicas
+            foreach (var watchedPartition in WatchedReplicas.Keys)
+            {
+                if (WatchedReplicas[watchedPartition].Equals(deadReplicaId))
+                {
+                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
+                }
+            }
         }
 
         public ReportCrashResponse ReportCrash(ReportCrashRequest request)
         {
+            // Remove replica from correct replicas
+            CrashedServers.Add(request.DeadReplicaId);
+            foreach (var serversByPartition in ServersByPartition)
+            {
+                serversByPartition.Value.Remove(request.DeadReplicaId);
+            }
+
+            // Remove buffered replica messages
+            RetransmissionBuffer.RemoveReplica(request.DeadReplicaId);
+
+            // Update watched replicas
+            foreach (var watchedPartition in WatchedReplicas.Keys)
+            {
+                if (WatchedReplicas[watchedPartition].Equals(request.DeadReplicaId))
+                {
+                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
+                }
+            }
+
             return new ReportCrashResponse { };
         }
 
@@ -477,7 +580,11 @@ namespace Server
             foreach (var partitionDetails in request.PartitionServers)
             {
                 // if already existed, do nothing
-                ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
+                if(ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
+                {
+                    // If we added a new partition, compute which server to check in heartbeat messages
+                    SetWatchedReplica(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
+                }
             }
 
             foreach (var serverUrl in request.ServerUrls)
@@ -547,8 +654,7 @@ namespace Server
             {
                 if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    // Trigger crash event for the server that crashed
-                    
+                    PropagateCrash(serverId);            
                 }
                 else
                 {
@@ -557,5 +663,14 @@ namespace Server
             }
         }
 
+        private void SetWatchedReplica(string partitionId, List<string> serverIds)
+        {
+            if(serverIds.Count > 1)
+            {
+                // Only makes sense to watch for replicas in partitions with more than 1 server
+                serverIds.Sort();
+                WatchedReplicas[partitionId] = serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
+            }
+        }
     }
 }
