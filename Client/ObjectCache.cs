@@ -73,6 +73,15 @@ namespace Client
             return true;
         }
 
+        public int GetObjectCounter(ObjectId key)
+        {
+            if(ObjectCache.TryGetValue(key, out var entry))
+            {
+                return entry.Value.Version.Counter;
+            }
+            return 0;
+        }
+
         // remove least recently used entries to clean up space
         private void CleanCache()
         {
