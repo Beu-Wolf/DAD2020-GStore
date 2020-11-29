@@ -397,7 +397,22 @@ namespace Server
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
             Console.WriteLine("Received Propagate Write");
-            
+            ObjectKey receivedObjectKey = new ObjectKey(request.PropMsg.ObjectId);
+            ObjectInfo receivedObjectInfo = new ObjectInfo
+            {
+                Key = request.PropMsg.ObjectId,
+                ObjectVersion = request.PropMsg.ObjectVersion,
+                Value = request.PropMsg.Value
+            };
+            if (Database.TryStoreValue(receivedObjectKey, receivedObjectInfo))
+            {
+                // Remove messages refering to same object but older
+                RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
+            }
+
+            // add to retransmission buffers
+            RetransmissionBuffer.AddNewMessage(request.SenderReplicaId, request.PropMsg);
+
             return new PropagateWriteResponse { };
         }
 
