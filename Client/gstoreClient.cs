@@ -157,75 +157,52 @@ namespace Client
                 }
             }
 
-            var success = false;
-            int numTries = 0;
+            ObjectId objKey = new ObjectId
+            {
+                PartitionId = partition_id,
+                ObjectKey = object_id
+            };
+
             WriteObjectRequest request = new WriteObjectRequest
             {
                 Object = new ObjectInfo
                 {
-                    Key = new ObjectId
-                    {
-                        PartitionId = partition_id,
-                        ObjectKey = object_id
-                    },
-                    ObjectVersion = new ObjectVersion
+                    Key = objKey,
+                    Value = value,
+                    Version = new ObjectVersion
                     {
                         ClientId = Id,
-                        Counter = 1
+                        Counter = ObjectCache.GetObjectCounter(objKey),
                     },
-                    Value = value
-                }                      
+                }
             };
-            var crashedServers = new ConcurrentBag<string>();
-            while (!success && numTries < ServersOfPartition.Count)
+            bool success = false;
+            do
             {
                 try
                 {
                     var reply = ConnectedServer.WriteObject(request);
-                    Console.WriteLine("Received: " + reply.Ok);
+                    var newVersion = reply.NewVersion;
+                    Console.WriteLine("Received: " + newVersion);
                     success = true;
-                }
-                catch (RpcException e)
+                } catch (RpcException e)
                 {
-                    if (e.Status.StatusCode == StatusCode.PermissionDenied)
+                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                     {
-                        Console.WriteLine($"Cannot write in server {currentServerId}");
+                        Console.WriteLine($"Server {currentServerId} is down");
+                        // remove crashed server so we don't pick it again
+                        HandleCrashedServer(currentServerId);
                     }
                     else
                     {
-                        // If error is because Server failed, keep it
-                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
-                        {
-                            Console.WriteLine($"Server {currentServerId} is down");
-                            crashedServers.Add(currentServerId);
-                        }
-                        else
-                        {
-                            throw e;
-                        }
+                        throw e;
                     }
-
-                    if (++numTries < ServersOfPartition.Count)
-                    {
-                        // Connect to next server in list
-                        currentServerPartitionIndex = (currentServerPartitionIndex + 1) % ServersOfPartition.Count;
-                        TryConnectToServer(ServersOfPartition[currentServerPartitionIndex]);
-                    }
-
                 }
-            }
+            } while (!success && TryConnectToPartition(partition_id));
 
-            // Remove crashed servers from list and update CrashedServers list
-            CrashedServers.Union(crashedServers);
-            foreach (var crashedServer in crashedServers)
+            if(!success)
             {
-                foreach (var kvPair in ServersIdByPartition)
-                {
-                    if (kvPair.Value.Contains(crashedServer))
-                    {
-                        kvPair.Value.Remove(crashedServer);
-                    }
-                }
+                Console.WriteLine("Failed to write value. Every server was down.");
             }
         }
 
