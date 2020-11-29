@@ -29,20 +29,16 @@ message ReadObjectRequest {
 }
 
 message ReadObjectReply {
-	string value = 1;
-	ObjectVersion objectVersion = 2;
+	ObjectInfo object = 1;
 }
 
 
 message WriteObjectRequest {
-	ObjectId key = 1;
-	string value = 2;
-	ObjectVersion objectVersion = 3;
+	ObjectInfo object = 1;
 }
 
 message WriteObjectReply {
 	ObjectVersion newVersion = 1;
-	bool ok = 2;
 }
 
 message ListServerRequest {

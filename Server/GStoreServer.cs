@@ -15,21 +15,21 @@ namespace Server
     public class Database
     {
         // Dictionary with values
-        private ConcurrentDictionary<ObjectKey, ObjectValueManager> KeyValuePairs;
+        private ConcurrentDictionary<ObjectKey, ObjectInfo> KeyValuePairs;
 
         // ReadWriteLock for listMe functions
         private ReaderWriterLock LocalReadWriteLock;
 
         public Database()
         {
-            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectValueManager>();
+            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>();
             LocalReadWriteLock = new ReaderWriterLock();
         }
 
-        public bool TryReadFromKVPair(ObjectKey objectKey, out ObjectValueManager objectValue)
+        public bool TryGetValue(ObjectKey objectKey, out ObjectInfo objectValue)
         {
             LocalReadWriteLock.AcquireReaderLock(-1);
-            if (!KeyValuePairs.TryGetValue(objectKey, out ObjectValueManager currentObjectValue))
+            if (!KeyValuePairs.TryGetValue(objectKey, out ObjectInfo currentObjectValue))
             {
                 objectValue = null;
                 LocalReadWriteLock.ReleaseReaderLock();
@@ -37,15 +37,13 @@ namespace Server
             } else
             {
                 LocalReadWriteLock.ReleaseReaderLock();
-                currentObjectValue.LockRead();
                 objectValue = currentObjectValue;
-                currentObjectValue.UnlockRead();
                 return true;
             }
         }
 
 
-        public bool TryWriteToKVPair(ObjectKey objectKey, ObjectValueManager objectValue)
+        public bool TryStoreValue(ObjectKey objectKey, ObjectInfo objectValue)
         {
             LocalReadWriteLock.AcquireWriterLock(-1);
             if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
@@ -56,27 +54,22 @@ namespace Server
                     // Our version is bigger than received one, we don't care
                     return false;
                 }
-                currentObjectValue.LockWrite();
-                currentObjectValue.UnlockWrite(objectValue.Value, objectValue.ObjectVersion);
+                
             }
-            else
-            {
-
-                KeyValuePairs[objectKey] = objectValue;
-                LocalReadWriteLock.ReleaseWriterLock();
-            }
+            
+            KeyValuePairs[objectKey] = objectValue;
+            LocalReadWriteLock.ReleaseWriterLock();
+            
             return true;
         }
 
-        public List<KeyValuePair<ObjectKey, ObjectValueManager>> ReadAllDatabase() {
-            List<KeyValuePair<ObjectKey, ObjectValueManager>> lst = new List<KeyValuePair<ObjectKey, ObjectValueManager>>();
+        public List<KeyValuePair<ObjectKey, ObjectInfo>> ReadAllDatabase() {
+            List<KeyValuePair<ObjectKey, ObjectInfo>> lst = new List<KeyValuePair<ObjectKey, ObjectInfo>>();
             LocalReadWriteLock.AcquireReaderLock(-1);
 
             foreach (var obj in KeyValuePairs)
             {
-                obj.Value.LockRead();
                 lst.Add(obj);
-                obj.Value.UnlockRead();
             }
                 
             LocalReadWriteLock.ReleaseReaderLock();
@@ -110,44 +103,72 @@ namespace Server
     }
 
 
-    public class ObjectMessages
-    {
-        public ConcurrentDictionary<ObjectKey, PropagationMessage> ObjectMessage = new ConcurrentDictionary<ObjectKey, PropagationMessage>();
-    }
-
-    public class ReceivedMessages
-    {
-        // <partition_id, ObjectMessages>
-        public ConcurrentDictionary<string, ObjectMessages> PartitionMessages = new ConcurrentDictionary<string, ObjectMessages>();
-    
-        public void RemoveObject(ObjectKey objectKey)
-        {
-            foreach (var partition in PartitionMessages.Keys)
-            {
-                if (PartitionMessages[partition].ObjectMessage.ContainsKey(objectKey))  
-                {
-                    PartitionMessages[partition].ObjectMessage.TryRemove(objectKey, out PropagationMessage propagationMessage);
-                }
-            }
-        }
-    }
-
     public class RetransmissionBuffer
     {
         // <sender_replica_id, ReceivedMessages>
         private ConcurrentDictionary<string, ReceivedMessages> ReplicaReceivedMessages = new ConcurrentDictionary<string, ReceivedMessages>();
+
+        internal object OperationLock = new object();
+
+        internal class ReceivedMessages
+        {
+            // <partition_id, ObjectMessages>
+            internal ConcurrentDictionary<string, ObjectMessages> PartitionMessages = new ConcurrentDictionary<string, ObjectMessages>();
+
+            internal ReceivedMessages(string senderReplicaId, PropagationMessage propagationMessage)
+            {
+                PartitionMessages[senderReplicaId] = new ObjectMessages(propagationMessage);
+            }
+
+            internal void RemoveObject(ObjectKey objectKey)
+            {
+                
+                foreach (var partition in PartitionMessages.Keys)
+                {
+                    PartitionMessages[partition].MessagesByPartition.Remove(objectKey, out PropagationMessage propagationMessage);     
+                }
+            }
+        }
+
+        internal class ObjectMessages
+        {
+            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>();
+            
+            internal ObjectMessages(PropagationMessage propagationMessage)
+            {
+                MessagesByPartition[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
+            }
         
+        }
+
         public void RemoveObjectFromBuffer(ObjectKey objectKey)
         {
-            foreach (var replicaId in ReplicaReceivedMessages.Keys)
+            lock(OperationLock)
             {
-                ReplicaReceivedMessages[replicaId].RemoveObject(objectKey);
+                foreach (var replicaId in ReplicaReceivedMessages.Keys)
+                {
+                    ReplicaReceivedMessages[replicaId].RemoveObject(objectKey);
+                }
             }
+           
         }
 
         public void AddNewMessage(string senderReplicaId, PropagationMessage propagationMessage)
         {
-            ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId].ObjectMessage[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
+            lock(OperationLock)
+            {
+                if(!ReplicaReceivedMessages.ContainsKey(senderReplicaId))
+                {
+                    ReplicaReceivedMessages[senderReplicaId] = new ReceivedMessages(senderReplicaId, propagationMessage);
+                } else if (!ReplicaReceivedMessages[senderReplicaId].PartitionMessages.ContainsKey(propagationMessage.PartitionId))
+                {
+                    ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId] = new ObjectMessages(propagationMessage);
+                } else
+                {
+                    ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId].MessagesByPartition[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
+                }
+            }
+
         }
     }
 
@@ -209,14 +230,13 @@ namespace Server
 
             var requestedObject = new ObjectKey(request.Key);
 
-            if (Database.TryReadFromKVPair(requestedObject, out ObjectValueManager objectValueManager))
+            if (Database.TryGetValue(requestedObject, out ObjectInfo objectInfo))
             {
 
 
                 ReadObjectReply reply = new ReadObjectReply
                 {
-                    Value = objectValueManager.Value,
-                    ObjectVersion = objectValueManager.ObjectVersion
+                    Object = objectInfo
                 };
                 return reply;
 
@@ -230,16 +250,16 @@ namespace Server
         public WriteObjectReply Write(WriteObjectRequest request)
         {
             Console.WriteLine("Received write with params:");
-            Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
-            Console.WriteLine($"Value: {request.Value}");
-            Console.WriteLine($"ObjectVersion: <{request.ObjectVersion.Counter}, {request.ObjectVersion.ClientId}>");
+            Console.WriteLine($"Partition_id: {request.Object.Key.PartitionId}");
+            Console.WriteLine($"Object_id: {request.Object.Key.ObjectKey}");
+            Console.WriteLine($"Value: {request.Object.Value}");
+            Console.WriteLine($"ObjectVersion: <{request.Object.ObjectVersion.Counter}, {request.Object.ObjectVersion.ClientId}>");
 
             // Compute new Object Version
-            ObjectVersion newObjectVersion = GetNewVersion(request.ObjectVersion, new ObjectKey(request.Key));
+            ObjectVersion newObjectVersion = GetNewVersion(request.Object.ObjectVersion, new ObjectKey(request.Object.Key));
 
-            ObjectKey receivedObjectKey = new ObjectKey(request.Key);
-            if(Database.TryWriteToKVPair(receivedObjectKey, new ObjectValueManager(request.Value, newObjectVersion)))
+            ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
+            if(Database.TryStoreValue(receivedObjectKey, request.Object))
             {
                 // Remove messages refering to same object but older
                 RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
@@ -253,24 +273,21 @@ namespace Server
                     Counter = IncrementMessageCounter()
                 },
                 PartitionId = receivedObjectKey.Partition_id,
-                ObjectId = request.Key,
-                ObjectVersion = request.ObjectVersion,
-                Value = request.Value
+                ObjectId = request.Object.Key,
+                ObjectVersion = request.Object.ObjectVersion,
+                Value = request.Object.Value
             };
 
-            // Broadcast this message
-            ServersByPartition.TryGetValue(receivedObjectKey.Partition_id, out List<string> serverIds);
-
+            
             BoolWrapper waitForFirstAck = new BoolWrapper(false);
 
-            foreach (var server in ServerUrls.Where(x => serverIds.Contains(x.Key) && x.Key != MyId))
+              
+            // Paralelyze
+            Task.Run(() =>
             {
-                // Paralelyze
-                Task.Run(() =>
-                {
-                    BroadcastMessage(server.Key, server.Value, waitForFirstAck, propagationMessage);
-                });
-            }
+                BroadcastMessage(waitForFirstAck, propagationMessage.PartitionId, propagationMessage);
+            });
+            
 
             // Lock this thread
             lock(waitForFirstAck.WaitForInformationLock)
@@ -279,8 +296,7 @@ namespace Server
             }
             return new WriteObjectReply
             {
-                NewVersion = newObjectVersion,
-                Ok = true
+                NewVersion = newObjectVersion
             };
 
         }
@@ -291,18 +307,9 @@ namespace Server
 
             List<ObjectInfo> lst = new List<ObjectInfo>();
 
-            List<KeyValuePair<ObjectKey, ObjectValueManager>> databaseObjects = Database.ReadAllDatabase();
+            List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
 
-            databaseObjects.ForEach(x => lst.Add(new ObjectInfo
-            {
-                Key = new ObjectId
-                {
-                    ObjectKey = x.Key.Object_id,
-                    PartitionId = x.Key.Partition_id
-                },
-                ObjectVersion = x.Value.ObjectVersion,
-                Value = x.Value.Value
-            }));
+            databaseObjects.ForEach(x => lst.Add(x.Value));
 
             return new ListServerReply
             {
@@ -316,7 +323,7 @@ namespace Server
             Console.WriteLine("Received ListGlobal");
             List<ObjectId> lst = new List<ObjectId>();
 
-            List<KeyValuePair<ObjectKey, ObjectValueManager>> databaseObjects = Database.ReadAllDatabase();
+            List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
 
             databaseObjects.ForEach(x => lst.Add( new ObjectId
             {
@@ -496,7 +503,7 @@ namespace Server
         {
             return new ObjectVersion
             {
-                Counter = Math.Max(clientObjectVersion.Counter, Database.TryReadFromKVPair(objectKey, out var objectValue) ? objectValue.ObjectVersion.Counter : 0) + 1,
+                Counter = Math.Max(clientObjectVersion.Counter, Database.TryGetValue(objectKey, out var objectValue) ? objectValue.ObjectVersion.Counter : 0) + 1,
                 ClientId = clientObjectVersion.ClientId
             };
         }
@@ -510,7 +517,15 @@ namespace Server
             }
         }
 
-        private void BroadcastMessage(string serverId, string serverUrl, BoolWrapper waitForFirstAck, PropagationMessage propagationMessage)
+        private void BroadcastMessage(BoolWrapper waitForFirstAck, string partitionId, PropagationMessage propagationMessage)
+        {
+            foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId))
+            {
+                PropagateWrite(server.Key, server.Value, waitForFirstAck, propagationMessage);
+            } 
+        }
+
+        private void PropagateWrite(string serverId, string serverUrl, BoolWrapper waitForFirstAck, PropagationMessage propagationMessage)
         {
             try
             {
