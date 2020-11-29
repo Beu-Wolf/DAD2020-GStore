@@ -137,19 +137,10 @@ namespace Client
             // Console.WriteLine($"read {partitionId} {objectId} {serverId}");
             Console.WriteLine("read " + partitionId + " " + objectId + " " + serverId);
 
-
             
-            if (serverId != string.Empty)
-            {
-                client.ReadObject(partitionId, objectId, serverId);
-            }
-            else
-            {
-                client.ReadObject(partitionId, objectId, "-1");
-            }
-            
-           
+            client.ReadObject(partitionId, objectId, serverId);
         }
+
         static void Handle_write(string[] cmd, GStoreClient client) {
             if (cmd.Length < 4) {
                 Console.WriteLine("Invalid command format!");

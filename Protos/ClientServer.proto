@@ -13,15 +13,14 @@ message ObjectId {
 }
 
 message ObjectVersion {
-	string client_id = 1;
-	int32 counter = 2;
+	int32 counter = 1;
+	int32 client_id = 2;
 }
 
 message ObjectInfo {
 	ObjectId key = 1;
 	string value = 2;
-	bool isPartitionMaster = 3; 
-
+	ObjectVersion version = 3;
 }
 
 message ReadObjectRequest {
@@ -29,7 +28,7 @@ message ReadObjectRequest {
 }
 
 message ReadObjectReply {
-	string value = 1;
+	ObjectInfo object = 1;
 }
 
 

@@ -71,7 +71,11 @@ namespace Server
                 objectValueManager.LockRead();
                 ReadObjectReply reply = new ReadObjectReply
                 {
-                    Value = objectValueManager.Value
+                    Object = new ObjectInfo
+                    {
+                        Key = request.Key,
+                        Value = objectValueManager.Value
+                    }
                 };
                 objectValueManager.UnlockRead();
 
@@ -222,7 +226,7 @@ namespace Server
                 KeyValuePairs[obj].LockRead();
                 lst.Add(new ObjectInfo
                 {
-                    IsPartitionMaster = MasteredPartitions.Contains(obj.Partition_id),
+                    // IsPartitionMaster = MasteredPartitions.Contains(obj.Partition_id),
                     Key = new ObjectId
                     {
                         PartitionId = obj.Partition_id,

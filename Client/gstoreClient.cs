@@ -22,16 +22,16 @@ namespace Client
 
     public class GStoreClient
     {
-        // Mapping of partitions and masters
-        // URL of all servers
 
         private GrpcChannel Channel { get; set; }
-        private ClientServerGrpcService.ClientServerGrpcServiceClient Client;
+        private ClientServerGrpcService.ClientServerGrpcServiceClient ConnectedServer;
         BoolWrapper ContinueExecution;
 
         private readonly ConcurrentDictionary<string, List<string>> ServersIdByPartition;
         private readonly ConcurrentDictionary<string, string> ServerUrls;
         private readonly ConcurrentBag<string> CrashedServers;
+
+        private readonly Cache ObjectCache;
         private string currentServerId = "-1";
         private int Id;
 
@@ -45,45 +45,66 @@ namespace Client
             CrashedServers = new ConcurrentBag<string>();
         }
 
-        public bool TryChangeCommunicationChannel(string server_id)
+        private bool TryConnectToServer(string server_id)
         {
             Console.WriteLine("Trying to connect to " + server_id);
             try
             {
                 currentServerId = server_id;
                 Channel = GrpcChannel.ForAddress(ServerUrls[server_id]);
-                Client = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
+                ConnectedServer = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
                 return true;
             }
             catch (Exception)
             {
                 // Print Exception?
+                // Add to crashed servers?
                 return false;
             }
         }
 
-        public void ReadObject(string partition_id, string object_id, string server_id)
+        private bool TryConnectToPartition(string partition_id)
         {
-            // Check if connected Server has requested partition
-
-            if (ServersIdByPartition[partition_id].Count == 0)
+            if(!ServersIdByPartition.ContainsKey(partition_id))
             {
-                Console.WriteLine($"No available server for partition {partition_id}");
-                return;
+                Console.WriteLine($"Partition {partition_id} does not exist");
+                return false;
             }
 
-            if (!ServersIdByPartition[partition_id].Contains(currentServerId))
+            foreach (var serverId in ServersIdByPartition[partition_id])
             {
-                if (server_id == "-1")
+                if(TryConnectToServer(serverId))
                 {
-                    // Not connected to correct partition, and no optional server stated, connect to random server from partition
-                    Random rnd = new Random();
-                    var randomServerFromPartition = ServersIdByPartition[partition_id][rnd.Next(ServersIdByPartition[partition_id].Count)];
-                    TryChangeCommunicationChannel(randomServerFromPartition);
+                    return true;
                 }
-                else
+            }
+
+            return false;
+        }
+
+        public void ReadObject(string partition_id, string object_id, string server_id)
+        {
+            
+            if (server_id != string.Empty)
+            { // we have to connect to a specific server
+                
+                if (!ServersIdByPartition[partition_id].Contains(currentServerId))
+                { // specified server does not belong to the asked partition!
+                    Console.WriteLine($"Specified server does not belong to partition {partition_id}");
+                    return;
+                }
+
+                if(!TryConnectToServer(server_id))
                 {
-                    TryChangeCommunicationChannel(server_id);
+                    Console.WriteLine($"Could not connect to server {server_id}");
+                    return;
+                }
+            } else
+            {
+                if(!TryConnectToPartition(partition_id))
+                {
+                    Console.WriteLine($"Could not connect to any server from partition {partition_id}");
+                    return;
                 }
             }
 
@@ -95,10 +116,11 @@ namespace Client
                     ObjectKey = object_id
                 }
             };
+
+            ReadObjectReply reply;
             try
             {
-                var reply = Client.ReadObject(request);
-                Console.WriteLine("Received: " + reply.Value);
+                reply = ConnectedServer.ReadObject(request);
             }
             catch (RpcException e)
             {
@@ -108,34 +130,31 @@ namespace Client
                     UpdateCrashedServersList();
                 }
 
+                // TODO: non-existing objects will generate an exception
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
                 Console.WriteLine($"Error message: {e.Status.Detail}");
                 Console.WriteLine("N/A");
+                return;
+            }
+
+            Console.WriteLine("Received: " + reply.Object);
+            if(!ObjectCache.RegisterObject(reply.Object))
+            {
+                // Got older read. Do something if you want a newer one
+                Console.WriteLine("Object is outdated");
             }
         }
 
         public void WriteObject(string partition_id, string object_id, string value)
         {
-
-            int currentServerPartitionIndex;
             List<string> ServersOfPartition = ServersIdByPartition[partition_id];
-
-            if (ServersOfPartition.Count == 0)
+            if (!ServersOfPartition.Contains(currentServerId)) 
             {
-                Console.WriteLine($"No available servers for partition {partition_id}");
-                return;
-            }
-
-            // Check if connected to server with desired partition
-            if (!ServersOfPartition.Contains(currentServerId))
-            {
-                // If not connect to first server of partition
-                TryChangeCommunicationChannel(ServersOfPartition[0]);
-                currentServerPartitionIndex = 0;
-            }
-            else
-            {
-                currentServerPartitionIndex = ServersOfPartition.IndexOf(currentServerId);
+                if(!TryConnectToPartition(partition_id))
+                {
+                    Console.WriteLine($"No available servers for partition {partition_id}");
+                    return;
+                }
             }
 
             var success = false;
@@ -154,7 +173,7 @@ namespace Client
             {
                 try
                 {
-                    var reply = Client.WriteObject(request);
+                    var reply = ConnectedServer.WriteObject(request);
                     Console.WriteLine("Received: " + reply.Ok);
                     success = true;
                 }
@@ -182,7 +201,7 @@ namespace Client
                     {
                         // Connect to next server in list
                         currentServerPartitionIndex = (currentServerPartitionIndex + 1) % ServersOfPartition.Count;
-                        TryChangeCommunicationChannel(ServersOfPartition[currentServerPartitionIndex]);
+                        TryConnectToServer(ServersOfPartition[currentServerPartitionIndex]);
                     }
 
                 }
@@ -206,17 +225,17 @@ namespace Client
         {
             if (currentServerId != server_id)
             {
-                TryChangeCommunicationChannel(server_id);
+                TryConnectToServer(server_id);
             }
 
             try
             {
                 ListServerRequest request = new ListServerRequest();
-                var reply = Client.ListServer(request);
+                var reply = ConnectedServer.ListServer(request);
                 Console.WriteLine("Received from server: " + server_id);
                 foreach (var obj in reply.Objects)
                 {
-                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>");
                 }
             }
             catch (RpcException e)
@@ -238,13 +257,13 @@ namespace Client
         {
             foreach (var serverId in ServerUrls.Keys)
             {
-                TryChangeCommunicationChannel(serverId);
+                TryConnectToServer(serverId);
 
                 try
                 {
 
                     ListGlobalRequest request = new ListGlobalRequest();
-                    var reply = Client.ListGlobal(request);
+                    var reply = ConnectedServer.ListGlobal(request);
                     Console.WriteLine("Received from " + serverId);
                     foreach (var key in reply.Keys)
                     {
@@ -286,6 +305,7 @@ namespace Client
                 while (!ContinueExecution.Value) Monitor.Wait(ContinueExecution.WaitForInformationLock);
             }
         }
+
 
         /*
          * gRPC Services
