@@ -400,7 +400,7 @@ namespace Server
 
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
-            Console.WriteLine($"Received Propagate Write for message {request.PropMsg.ObjectId.PartitionId}, {request.PropMsg.ObjectId.ObjectKey}");
+            Console.WriteLine($"Received Propagate Write message <{request.PropMsg.Id.AuthorReplicaId}, {request.PropMsg.Id.AuthorReplicaId}> from {request.SenderReplicaId}");
             ObjectKey receivedObjectKey = new ObjectKey(request.PropMsg.ObjectId);
             ObjectInfo receivedObjectInfo = new ObjectInfo
             {
@@ -434,24 +434,19 @@ namespace Server
             foreach (var serversByPartition in ServersByPartition)
             {
                 serversByPartition.Value.Remove(deadReplicaId);
-                Console.WriteLine($"ServersByPartition[{serversByPartition.Key}]: " + ServersByPartition[serversByPartition.Key][0]);
             }
-
 
             // broadcast buffered replica messages
             // Do we need it to be parallel?
             var propMessages = RetransmissionBuffer.GetReplicaPropMessages(deadReplicaId);
-            Console.WriteLine("Got replica Prop messages with size: " + propMessages.Count);
             propMessages.ForEach(x =>
             {
                 BroadcastMessage(new BoolWrapper(false), x.PartitionId, x);
             });
 
-            Console.WriteLine("Tryngo to remove replica from RB");
             // Remove buffered replica messages
             RetransmissionBuffer.RemoveReplica(deadReplicaId);
 
-            Console.WriteLine("Updating watched replicas");
             // Update watched replicas
             foreach (var watchedPartition in WatchedReplicas.Keys)
             {
@@ -660,7 +655,6 @@ namespace Server
                 WatchedReplicas[partitionId] = serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
             } else
             {
-                Console.WriteLine("Removing " + partitionId);
                 WatchedReplicas.TryRemove(partitionId, out string _); // we dont need to watch for ourselves
             }
         }
