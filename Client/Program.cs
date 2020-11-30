@@ -131,25 +131,13 @@ namespace Client
             string partitionId = cmd[1];
             string objectId = cmd[2];
             string serverId = string.Empty;
-            if (cmd.Length == 4)
+            if (cmd.Length == 4 && cmd[3] != "-1")
                 serverId = cmd[3];
 
-            // Console.WriteLine($"read {partitionId} {objectId} {serverId}");
-            Console.WriteLine("read " + partitionId + " " + objectId + " " + serverId);
-
-
             
-            if (serverId != string.Empty)
-            {
-                client.ReadObject(partitionId, objectId, serverId);
-            }
-            else
-            {
-                client.ReadObject(partitionId, objectId, "-1");
-            }
-            
-           
+            client.ReadObject(partitionId, objectId, serverId);
         }
+
         static void Handle_write(string[] cmd, GStoreClient client) {
             if (cmd.Length < 4) {
                 Console.WriteLine("Invalid command format!");
@@ -172,6 +160,7 @@ namespace Client
             client.WriteObject(partitionId, objectId, value);
                  
         }
+        
         static void Handle_listServer(string[] cmd, GStoreClient client) {
             if (cmd.Length != 2) {
                 Console.WriteLine("Invalid command format!");
@@ -187,6 +176,7 @@ namespace Client
             client.ListServer(serverId);
             
         }
+        
         static void Handle_listGlobal(string[] cmd, GStoreClient client) {
             if (cmd.Length != 1) {
                 Console.WriteLine("Invalid command format!");
@@ -197,6 +187,7 @@ namespace Client
             Console.WriteLine("listGlobal");
             client.ListGlobal();
         }
+        
         static void Handle_wait(string[] cmd, GStoreClient client) {
             if (cmd.Length != 2) {
                 Console.WriteLine("Invalid command format!");

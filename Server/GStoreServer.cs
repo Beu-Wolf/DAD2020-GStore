@@ -41,7 +41,7 @@ namespace Server
             {
                 if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
                 {
-                    if (CompareVersion(currentObjectValue.ObjectVersion, objectValue.ObjectVersion) > 0)
+                    if (CompareVersion(currentObjectValue.Version, objectValue.Version) > 0)
                     {
                         // Our version is bigger than received one, we don't care
                         return false;
@@ -58,11 +58,10 @@ namespace Server
             object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
             lock (objectLock)
             {
-                    ObjectVersion newObjectVersion = GetNewVersion(objectValue.ObjectVersion, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.ObjectVersion : null);
-                    objectValue.ObjectVersion = newObjectVersion;
-                    KeyValuePairs[objectKey] = objectValue;
-                    return newObjectVersion;
-               
+                ObjectVersion newObjectVersion = GetNewVersion(objectValue.Version, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.Version : null);
+                objectValue.Version = newObjectVersion;
+                KeyValuePairs[objectKey] = objectValue;
+                return newObjectVersion;
             }
         }
 
@@ -156,7 +155,8 @@ namespace Server
             lock(OperationLock)
             {
                 List<PropagationMessage> lst = new List<PropagationMessage>();
-                ReplicaReceivedMessages[replicaId].PartitionMessages.Keys.ToList().ForEach(x => lst.AddRange(ReplicaReceivedMessages[replicaId].PartitionMessages[x].MessagesByPartition.Values));
+                if (ReplicaReceivedMessages.ContainsKey(replicaId))
+                    ReplicaReceivedMessages[replicaId].PartitionMessages.Keys.ToList().ForEach(x => lst.AddRange(ReplicaReceivedMessages[replicaId].PartitionMessages[x].MessagesByPartition.Values));
                 return lst;
             }
         }
@@ -258,9 +258,7 @@ namespace Server
          */
         public ReadObjectReply Read(ReadObjectRequest request)
         {
-            Console.WriteLine("Received Read with params:");
-            Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
+            Console.WriteLine($"[READ] Received Read with Key <{request.Key.PartitionId},{request.Key.ObjectKey}>");
 
             var requestedObject = new ObjectKey(request.Key);
 
@@ -270,6 +268,7 @@ namespace Server
                 {
                     Object = objectInfo
                 };
+                Console.WriteLine($"[READ] Success!");
                 return reply;
             }
             else
@@ -280,16 +279,17 @@ namespace Server
 
         public WriteObjectReply Write(WriteObjectRequest request)
         {
-            Console.WriteLine("Received write with params:");
-            Console.WriteLine($"Partition_id: {request.Object.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Object.Key.ObjectKey}");
-            Console.WriteLine($"Value: {request.Object.Value}");
-            Console.WriteLine($"ObjectVersion: <{request.Object.ObjectVersion.Counter}, {request.Object.ObjectVersion.ClientId}>");
+            Console.WriteLine("[WRITE] Received write with params:");
+            Console.WriteLine($"[WRITE] Partition_id: {request.Object.Key.PartitionId}");
+            Console.WriteLine($"[WRITE] Object_id: {request.Object.Key.ObjectKey}");
+            Console.WriteLine($"[WRITE] Value: {request.Object.Value}");
+            Console.WriteLine($"[WRITE] ObjectVersion: <{request.Object.Version.Counter}, {request.Object.Version.ClientId}>");
 
             
 
             ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
             ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
+            Console.WriteLine($"[WRITE] Wrote to database");
             
             // Remove messages refering to same object but older
             RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
@@ -303,25 +303,27 @@ namespace Server
                 },
                 PartitionId = receivedObjectKey.Partition_id,
                 ObjectId = request.Object.Key,
-                ObjectVersion = request.Object.ObjectVersion,
+                ObjectVersion = request.Object.Version,
                 Value = request.Object.Value
             };
             
             BoolWrapper waitForFirstAck = new BoolWrapper(false);
 
-              
+            
             // Paralelyze
             Task.Run(() =>
             {
                 BroadcastMessage(waitForFirstAck, propagationMessage.PartitionId, propagationMessage);
             });
-            
 
+            Console.WriteLine($"[WRITE] Waiting for first ack");
             // Lock this thread
-            lock(waitForFirstAck.WaitForInformationLock)
+            lock (waitForFirstAck.WaitForInformationLock)
             {
                 while (!waitForFirstAck.Value) Monitor.Wait(waitForFirstAck.WaitForInformationLock);
             }
+            
+            
             return new WriteObjectReply
             {
                 NewVersion = newObjectVersion
@@ -374,12 +376,14 @@ namespace Server
         {
             foreach (var watchedReplica in WatchedReplicas)
             {
+                Console.WriteLine("Sending heartbeat to " + watchedReplica.Value);
                 try
                 {
                     var channel = GrpcChannel.ForAddress(ServerUrls[watchedReplica.Value]);
                     var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
 
                     client.Heartbeat(new HeartbeatRequest());
+                    Console.WriteLine("Received Hearbeat of " + watchedReplica.Value);
                 } catch (RpcException exception)
                 {
                     if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
@@ -396,12 +400,12 @@ namespace Server
 
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
-            Console.WriteLine("Received Propagate Write");
+            Console.WriteLine($"Received Propagate Write for message {request.PropMsg.ObjectId.PartitionId}, {request.PropMsg.ObjectId.ObjectKey}");
             ObjectKey receivedObjectKey = new ObjectKey(request.PropMsg.ObjectId);
             ObjectInfo receivedObjectInfo = new ObjectInfo
             {
                 Key = request.PropMsg.ObjectId,
-                ObjectVersion = request.PropMsg.ObjectVersion,
+                Version = request.PropMsg.ObjectVersion,
                 Value = request.PropMsg.Value
             };
             if (Database.TryReplicaWrite(receivedObjectKey, receivedObjectInfo))
@@ -424,29 +428,36 @@ namespace Server
 
         public void PropagateCrash(string deadReplicaId)
         {
+            Console.WriteLine("Propagating crash of " + deadReplicaId);
             // Remove replica from correct replicas
             CrashedServers.Add(deadReplicaId);
             foreach (var serversByPartition in ServersByPartition)
             {
                 serversByPartition.Value.Remove(deadReplicaId);
+                Console.WriteLine($"ServersByPartition[{serversByPartition.Key}]: " + ServersByPartition[serversByPartition.Key][0]);
             }
+
 
             // broadcast buffered replica messages
             // Do we need it to be parallel?
             var propMessages = RetransmissionBuffer.GetReplicaPropMessages(deadReplicaId);
+            Console.WriteLine("Got replica Prop messages with size: " + propMessages.Count);
             propMessages.ForEach(x =>
             {
                 BroadcastMessage(new BoolWrapper(false), x.PartitionId, x);
             });
 
+            Console.WriteLine("Tryngo to remove replica from RB");
             // Remove buffered replica messages
             RetransmissionBuffer.RemoveReplica(deadReplicaId);
 
+            Console.WriteLine("Updating watched replicas");
             // Update watched replicas
             foreach (var watchedPartition in WatchedReplicas.Keys)
             {
                 if (WatchedReplicas[watchedPartition].Equals(deadReplicaId))
                 {
+                    Console.WriteLine("Updating watched replica of partition " + watchedPartition);
                     SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
                 }
             }
@@ -454,6 +465,7 @@ namespace Server
 
         public ReportCrashResponse ReportCrash(ReportCrashRequest request)
         {
+            Console.WriteLine("Received crash report of replica " + request.DeadReplicaId);
             // Remove replica from correct replicas
             CrashedServers.Add(request.DeadReplicaId);
             foreach (var serversByPartition in ServersByPartition)
@@ -543,8 +555,9 @@ namespace Server
                 // if already existed, do nothing
                 if(ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList()))
                 {
-                    // If we added a new partition, compute which server to check in heartbeat messages
-                    SetWatchedReplica(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
+                    // If we added a new partition, compute which server to check in heartbeat messages only if I belong to that partition
+                    if(partitionDetails.Value.ServerIds.ToList().Contains(MyId))
+                        SetWatchedReplica(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
                 }
             }
 
@@ -571,13 +584,43 @@ namespace Server
 
         private void BroadcastMessage(BoolWrapper waitForFirstAck, string partitionId, PropagationMessage propagationMessage)
         {
-            foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId))
+            List<string> sentServerIds = new List<string>();
+
+            int count = 0;
+            do
             {
-                PropagateWrite(server.Key, server.Value, waitForFirstAck, propagationMessage);
-            } 
+                foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId && !sentServerIds.Contains(x.Key)))
+                {
+                    Console.WriteLine($"[BROADCAST] Trying to send to server {server.Key}");
+                    if(PropagateWrite(server.Key, server.Value, propagationMessage))
+                    {
+                        sentServerIds.Add(server.Key);
+                        if (count == 0)
+                        {
+                            lock (waitForFirstAck.WaitForInformationLock)
+                            {
+                                waitForFirstAck.Value = true;
+                                Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
+                            }
+                        }
+
+                        count++;
+                    }
+                }
+            } while (sentServerIds.Count < (ServersByPartition[partitionId].Count-1));
+            // if count == 0 here, it means the foreach did not execute because we are the only server up in this partition
+            if (count == 0)
+            {
+                lock (waitForFirstAck.WaitForInformationLock)
+                {
+                    waitForFirstAck.Value = true;
+                    Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
+                }
+            }
+            
         }
 
-        private void PropagateWrite(string serverId, string serverUrl, BoolWrapper waitForFirstAck, PropagationMessage propagationMessage)
+        private bool PropagateWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
         {
             try
             {
@@ -587,17 +630,16 @@ namespace Server
                 {
                     SenderReplicaId = serverId,
                     PropMsg = propagationMessage
-                });
+                }, new CallOptions(deadline:DateTime.UtcNow.AddSeconds(2)));
                 // successful
-                lock(waitForFirstAck.WaitForInformationLock)
-                {
-                    waitForFirstAck.Value = true;
-                    Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
-                }
+                return true;
             }
             catch (RpcException e)
             {
-                if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
+                if (e.Status.StatusCode == StatusCode.DeadlineExceeded) {
+                    Console.WriteLine("[PROPAGATE] Server timed out");
+                }
+                else if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
                     PropagateCrash(serverId);            
                 }
@@ -606,6 +648,7 @@ namespace Server
                     throw e;
                 }
             }
+            return false;
         }
 
         private void SetWatchedReplica(string partitionId, List<string> serverIds)
@@ -615,6 +658,10 @@ namespace Server
                 // Only makes sense to watch for replicas in partitions with more than 1 server
                 serverIds.Sort();
                 WatchedReplicas[partitionId] = serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
+            } else
+            {
+                Console.WriteLine("Removing " + partitionId);
+                WatchedReplicas.TryRemove(partitionId, out string _); // we dont need to watch for ourselves
             }
         }
     }

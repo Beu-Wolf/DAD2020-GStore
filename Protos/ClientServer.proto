@@ -13,13 +13,13 @@ message ObjectId {
 }
 
 message ObjectVersion {
-	int32 client_id = 1;
-	int32 counter = 2;
+	int32 counter = 1;
+	int32 client_id = 2;
 }
 
 message ObjectInfo {
 	ObjectId key = 1;
-	ObjectVersion objectVersion = 2;
+	ObjectVersion version = 2;
 	string value = 3;
 
 }
