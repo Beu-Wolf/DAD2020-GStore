@@ -46,16 +46,6 @@ namespace Client
             ObjectCache = new Cache();
         }
 
-        private void HandleCrashedServer(string server_id)
-        {
-            Console.WriteLine($"Reporting crashed server: {server_id}");
-            CrashedServers.Add(server_id);
-            foreach (var partition in ServersIdByPartition.Values)
-            {
-                // if item doesn't exist, Remove returns false
-                partition.Remove(server_id);
-            }
-        }
 
         private bool TryConnectToServer(string server_id)
         {
@@ -146,7 +136,7 @@ namespace Client
                 // If error is because Server failed, update list of crashed Servers
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    UpdateCrashedServersList();
+                    HandleCrashedServer(currentServerId);
                 }
 
                 // TODO: non-existing objects will generate an exception
@@ -236,9 +226,8 @@ namespace Client
 
         public void ListServer(string server_id)
         {
-            if (currentServerId != server_id)
-            {
-                TryConnectToServer(server_id);
+            if (!TryConnectToServer(server_id)) {
+                return;
             }
 
             try
@@ -255,7 +244,7 @@ namespace Client
             {
                 if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    UpdateCrashedServersList();
+                    HandleCrashedServer(server_id);
                 }
                 else
                 {
@@ -274,7 +263,6 @@ namespace Client
 
                 try
                 {
-
                     ListGlobalRequest request = new ListGlobalRequest();
                     var reply = ConnectedServer.ListGlobal(request);
                     Console.WriteLine("Received from " + serverId);
@@ -287,7 +275,7 @@ namespace Client
                 {
                     if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                     {
-                        UpdateCrashedServersList();
+                        HandleCrashedServer(serverId);
                     }
                     else
                     {
@@ -297,18 +285,16 @@ namespace Client
             }
         }
 
-        private void UpdateCrashedServersList()
+
+        private void HandleCrashedServer(string server_id)
         {
-            // Update Crashed Server List
-            CrashedServers.Add(currentServerId);
-            foreach (var kvPair in ServersIdByPartition)
+            Console.WriteLine($"Reporting crashed server: {server_id}");
+            CrashedServers.Add(server_id);
+            foreach (var partition in ServersIdByPartition.Values)
             {
-                if (kvPair.Value.Contains(currentServerId))
-                {
-                    kvPair.Value.Remove(currentServerId);
-                }
+                // if item doesn't exist, Remove returns false
+                partition.Remove(server_id);
             }
-            Console.WriteLine($"Server {currentServerId} is down");
         }
 
         public void WaitForNetworkInformation()
