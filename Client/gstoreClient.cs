@@ -59,12 +59,12 @@ namespace Client
                 currentServerId = server_id;
                 Channel = GrpcChannel.ForAddress(ServerUrls[server_id]);
                 ConnectedServer = new ClientServerGrpcService.ClientServerGrpcServiceClient(Channel);
-                Console.WriteLine($"Connected to server {server_id}");
+                Console.WriteLine($"[+] Connected to server {server_id}");
                 return true;
             }
             catch (Exception)
             {
-                Console.WriteLine($"Failed to connect to server {server_id}");
+                Console.WriteLine($"[-] Failed to connect to server {server_id}");
                 HandleCrashedServer(server_id);
                 return false;
             }
@@ -72,9 +72,11 @@ namespace Client
 
         private bool TryConnectToPartition(string partition_id)
         {
+            Console.WriteLine($"[*] Trying to connect to partition {partition_id}");
+            
             if(!ServersIdByPartition.ContainsKey(partition_id))
             {
-                Console.WriteLine($"Partition {partition_id} does not exist");
+                Console.WriteLine($"[-] Partition {partition_id} does not exist");
                 return false;
             }
 
@@ -88,6 +90,7 @@ namespace Client
                 }
             }
 
+            Console.WriteLine($"[-] Could not connect to partition {partition_id}");
             return false;
         }
 
@@ -156,12 +159,13 @@ namespace Client
 
         public void WriteObject(string partition_id, string object_id, string value)
         {
+            Console.WriteLine("[WRITE]");
             List<string> ServersOfPartition = ServersIdByPartition[partition_id];
             if (!ServersOfPartition.Contains(currentServerId)) 
             {
                 if(!TryConnectToPartition(partition_id))
                 {
-                    Console.WriteLine($"No available servers for partition {partition_id}");
+                    Console.WriteLine($"[WRITE] No available servers for partition {partition_id}");
                     return;
                 }
             }
@@ -201,13 +205,12 @@ namespace Client
                         Value = value
                     });
 
-                    Console.WriteLine("Received: " + newVersion);
+                    Console.WriteLine($"[WRITE] New version: <{newVersion.Counter},{newVersion.ClientId}>");
                     success = true;
                 } catch (RpcException e)
                 {
                     if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
                     {
-                        Console.WriteLine($"Server {currentServerId} is down");
                         // remove crashed server so we don't pick it again
                         HandleCrashedServer(currentServerId);
                     }
@@ -220,7 +223,7 @@ namespace Client
 
             if(!success)
             {
-                Console.WriteLine("Failed to write value. Every server was down.");
+                Console.WriteLine("[WRITE] Failed to write value. Every server was down.");
             }
         }
 
@@ -234,10 +237,11 @@ namespace Client
             {
                 ListServerRequest request = new ListServerRequest();
                 var reply = ConnectedServer.ListServer(request);
-                Console.WriteLine("Received from server: " + server_id);
+
+                Console.WriteLine("[LIST SERVER] Received from server: " + server_id);
                 foreach (var obj in reply.Objects)
                 {
-                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>");
+                    Console.WriteLine($"[LIST SERVER]  -> {{ Key: <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, Value: {obj.Value}, Version: <{obj.Version.Counter},{obj.Version.ClientId}> }}");
                 }
             }
             catch (RpcException e)
@@ -257,6 +261,7 @@ namespace Client
 
         public void ListGlobal()
         {
+            Console.WriteLine("[LIST GLOBAL]");
             foreach (var serverId in ServerUrls.Keys)
             {
                 TryConnectToServer(serverId);
@@ -265,10 +270,10 @@ namespace Client
                 {
                     ListGlobalRequest request = new ListGlobalRequest();
                     var reply = ConnectedServer.ListGlobal(request);
-                    Console.WriteLine("Received from " + serverId);
+                    Console.WriteLine($"[LIST GLOBAL] Received from {serverId}:");
                     foreach (var key in reply.Keys)
                     {
-                        Console.WriteLine($"object <{key.PartitionId}, {key.ObjectKey}>");
+                        Console.WriteLine($"[LIST GLOBAL]  -> object <{key.PartitionId}, {key.ObjectKey}>");
                     }
                 }
                 catch (RpcException e)
@@ -288,7 +293,7 @@ namespace Client
 
         private void HandleCrashedServer(string server_id)
         {
-            Console.WriteLine($"Reporting crashed server: {server_id}");
+            Console.WriteLine($"[-] Server {server_id} is down. Removing from local network");
             CrashedServers.Add(server_id);
             foreach (var partition in ServersIdByPartition.Values)
             {
@@ -299,6 +304,7 @@ namespace Client
 
         public void WaitForNetworkInformation()
         {
+            Console.WriteLine("[*] Waiting for network information...");
             lock (ContinueExecution.WaitForInformationLock)
             {
                 while (!ContinueExecution.Value) Monitor.Wait(ContinueExecution.WaitForInformationLock);
@@ -307,44 +313,51 @@ namespace Client
 
 
         /*
-         * gRPC Services
+         * PM Communication Service Implementation
          */
         public ClientStatusReply Status()
         {
-            Console.WriteLine("Online Servers:");
-            foreach (var server in ServersIdByPartition)
+            Console.WriteLine("[STATUS]");
+            Console.WriteLine("[STATUS] Available Servers:");
+            foreach (var partition in ServersIdByPartition)
             {
-                Console.Write("Server ");
-                server.Value.ForEach(x => Console.Write(x + " "));
-                Console.Write("from partition " + server.Key + "\r\n");
+                Console.WriteLine($"[STATUS]  -> Partition ${partition.Key}: [{string.Join(", ", partition.Value)}]");
             }
-            Console.WriteLine("Crashed Servers");
+            Console.WriteLine("[STATUS] Crashed Servers:");
             foreach (var server in CrashedServers)
             {
-                Console.WriteLine($"Server {server}");
+                Console.WriteLine($"[STATUS]  -> {server}");
             }
             return new ClientStatusReply();
         }
 
         public NetworkInformationReply NetworkInformation(NetworkInformationRequest request)
         {
-            Console.WriteLine("Received NetworkInfo");
+            Console.WriteLine("[NETWORK INFO]");
+            Console.WriteLine("[NETWORK INFO] Received Servers:");
             foreach (var serverUrl in request.ServerUrls)
             {
                 if (!ServerUrls.ContainsKey(serverUrl.Key))
                 {
+                    Console.WriteLine($"[NETWORK INFO]  -> Server {serverUrl.Key} at {serverUrl.Value}");
                     ServerUrls[serverUrl.Key] = serverUrl.Value;
                 }
             }
+
+            Console.WriteLine("[NETWORK INFO] Received Partitions:");
             foreach (var partition in request.ServerIdsByPartition)
             {
-                if (!ServersIdByPartition.ContainsKey(partition.Key))
+                if (ServersIdByPartition.ContainsKey(partition.Key))
                 {
-                    if (!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
-                    {
-                        throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
-                    }
+                    continue;
                 }
+                
+                if (!ServersIdByPartition.TryAdd(partition.Key, partition.Value.ServerIds.ToList()))
+                {
+                    throw new RpcException(new Status(StatusCode.Unknown, "Could not add element"));
+                }
+
+                Console.WriteLine($"[NETWORK INFO]  -> Partition ${partition.Key}: [{string.Join(", ", partition.Value.ServerIds)}]");
             }
             lock (ContinueExecution.WaitForInformationLock)
             {
@@ -356,6 +369,7 @@ namespace Client
 
         public ClientPingReply Ping()
         {
+            Console.WriteLine("[PING]");
             return new ClientPingReply();
         }
     }

@@ -163,6 +163,7 @@ namespace Client
             client.WriteObject(partitionId, objectId, value);
                  
         }
+        
         static void Handle_listServer(string[] cmd, GStoreClient client) {
             if (cmd.Length != 2) {
                 Console.WriteLine("Invalid command format!");
@@ -178,6 +179,7 @@ namespace Client
             client.ListServer(serverId);
             
         }
+        
         static void Handle_listGlobal(string[] cmd, GStoreClient client) {
             if (cmd.Length != 1) {
                 Console.WriteLine("Invalid command format!");
@@ -188,6 +190,7 @@ namespace Client
             Console.WriteLine("listGlobal");
             client.ListGlobal();
         }
+        
         static void Handle_wait(string[] cmd, GStoreClient client) {
             if (cmd.Length != 2) {
                 Console.WriteLine("Invalid command format!");
