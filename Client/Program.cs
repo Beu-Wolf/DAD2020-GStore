@@ -131,11 +131,8 @@ namespace Client
             string partitionId = cmd[1];
             string objectId = cmd[2];
             string serverId = string.Empty;
-            if (cmd.Length == 4)
+            if (cmd.Length == 4 && cmd[3] != "-1")
                 serverId = cmd[3];
-
-            // Console.WriteLine($"read {partitionId} {objectId} {serverId}");
-            Console.WriteLine("read " + partitionId + " " + objectId + " " + serverId);
 
             
             client.ReadObject(partitionId, objectId, serverId);

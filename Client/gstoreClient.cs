@@ -97,25 +97,14 @@ namespace Client
         public void ReadObject(string partition_id, string object_id, string server_id)
         {
             Console.WriteLine($"[READ] Requesting read: <{partition_id},{object_id}>");
-            if (server_id != string.Empty)
-            { // we have to connect to a specific server
-                
-                if (!ServersIdByPartition[partition_id].Contains(currentServerId))
-                { // specified server does not belong to the asked partition!
-                    Console.WriteLine($"[READ] Specified server does not belong to partition {partition_id}");
-                    return;
-                }
 
-                if(!TryConnectToServer(server_id))
-                {
-                    Console.WriteLine($"[READ] Could not connect to server {server_id}");
-                    return;
-                }
-            } else
+            if (!ServersIdByPartition[partition_id].Contains(currentServerId))
+            { // specified server does not belong to the asked partition!
+                Console.WriteLine($"[READ] Specified server does not belong to partition {partition_id}");
+            } else if (server_id == string.Empty || !TryConnectToServer(server_id))
             {
-                if(!TryConnectToPartition(partition_id))
+                if (!TryConnectToPartition(partition_id))
                 {
-                    Console.WriteLine($"[READ] Could not connect to any server from partition {partition_id}");
                     return;
                 }
             }
@@ -295,6 +284,7 @@ namespace Client
         {
             Console.WriteLine($"[-] Server {server_id} is down. Removing from local network");
             CrashedServers.Add(server_id);
+            ServerUrls.Remove(server_id, out var _);
             foreach (var partition in ServersIdByPartition.Values)
             {
                 // if item doesn't exist, Remove returns false
