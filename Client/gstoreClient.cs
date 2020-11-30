@@ -98,7 +98,7 @@ namespace Client
             try
             {
                 var reply = Client.ReadObject(request);
-                Console.WriteLine("Received: " + reply.Value);
+                Console.WriteLine("Received: " + reply.Object.Value);
             }
             catch (RpcException e)
             {
@@ -142,12 +142,20 @@ namespace Client
             int numTries = 0;
             WriteObjectRequest request = new WriteObjectRequest
             {
-                Key = new ObjectId
+                Object = new ObjectInfo
                 {
-                    PartitionId = partition_id,
-                    ObjectKey = object_id
-                },
-                Value = value
+                    Key = new ObjectId
+                    {
+                        PartitionId = partition_id,
+                        ObjectKey = object_id
+                    },
+                    ObjectVersion = new ObjectVersion
+                    {
+                        ClientId = Id,
+                        Counter = 1
+                    },
+                    Value = value
+                }                      
             };
             var crashedServers = new ConcurrentBag<string>();
             while (!success && numTries < ServersOfPartition.Count)
@@ -155,7 +163,7 @@ namespace Client
                 try
                 {
                     var reply = Client.WriteObject(request);
-                    Console.WriteLine("Received: " + reply.Ok);
+                    Console.WriteLine("Received: " + reply.NewVersion);
                     success = true;
                 }
                 catch (RpcException e)
@@ -216,7 +224,7 @@ namespace Client
                 Console.WriteLine("Received from server: " + server_id);
                 foreach (var obj in reply.Objects)
                 {
-                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}>, is {server_id} partition master? {obj.IsPartitionMaster}");
+                    Console.WriteLine($"object <{obj.Key.PartitionId}, {obj.Key.ObjectKey}> with version <{obj.ObjectVersion.Counter}, {obj.ObjectVersion.ClientId}>");
                 }
             }
             catch (RpcException e)
