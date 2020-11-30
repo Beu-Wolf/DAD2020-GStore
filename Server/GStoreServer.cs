@@ -123,9 +123,9 @@ namespace Server
             // <partition_id, ObjectMessages>
             internal ConcurrentDictionary<string, ObjectMessages> PartitionMessages = new ConcurrentDictionary<string, ObjectMessages>();
 
-            internal ReceivedMessages(string senderReplicaId, PropagationMessage propagationMessage)
+            internal ReceivedMessages(string partitionId, PropagationMessage propagationMessage)
             {
-                PartitionMessages[senderReplicaId] = new ObjectMessages(propagationMessage);
+                PartitionMessages[partitionId] = new ObjectMessages(propagationMessage);
             }
 
             internal void RemoveObject(ObjectKey objectKey)
@@ -167,7 +167,7 @@ namespace Server
             {
                 if(!ReplicaReceivedMessages.ContainsKey(senderReplicaId))
                 {
-                    ReplicaReceivedMessages[senderReplicaId] = new ReceivedMessages(senderReplicaId, propagationMessage);
+                    ReplicaReceivedMessages[senderReplicaId] = new ReceivedMessages(propagationMessage.PartitionId, propagationMessage);
                 } else if (!ReplicaReceivedMessages[senderReplicaId].PartitionMessages.ContainsKey(propagationMessage.PartitionId))
                 {
                     ReplicaReceivedMessages[senderReplicaId].PartitionMessages[propagationMessage.PartitionId] = new ObjectMessages(propagationMessage);
