@@ -197,6 +197,15 @@ namespace Client
                 {
                     var reply = ConnectedServer.WriteObject(request);
                     var newVersion = reply.NewVersion;
+                    
+                    // update cached object
+                    ObjectCache.RegisterObject(new ObjectInfo
+                    {
+                        Key = objKey,
+                        Version = newVersion,
+                        Value = value
+                    });
+
                     Console.WriteLine("Received: " + newVersion);
                     success = true;
                 } catch (RpcException e)
