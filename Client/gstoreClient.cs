@@ -59,6 +59,11 @@ namespace Client
 
         private bool TryConnectToServer(string server_id)
         {
+            if(server_id == currentServerId)
+            { // already connected to this server
+                return true;
+            }
+            
             try
             {
                 currentServerId = server_id;
