@@ -10,22 +10,17 @@ namespace Client
         public ObjectInfo Value { get; }
 
         // if cache is full, we remove the least recently accessed values
-        public long Timestamp { get; set; }
+        public DateTime Timestamp { get; set; }
 
         public CacheEntry(ObjectInfo value)
         {
             Value = value;
-            Timestamp = GetTimestamp();
+            Access();
         }
 
-        public void access()
+        public void Access()
         {
-            Timestamp = GetTimestamp();
-        }
-
-        private long GetTimestamp()
-        {
-            return ((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds();
+            Timestamp = DateTime.UtcNow;
         }
     }
 
@@ -49,35 +44,43 @@ namespace Client
         public bool RegisterObject(ObjectInfo newObj)
         {
             // object already exists => check if newer and update
-            if (ObjectCache.ContainsKey(newObj.Key))
+            bool status = false;
+            lock (CacheLock)
             {
-                bool result = false;
-                lock (CacheLock) {
-                    ObjectInfo oldObj = (ObjectCache[newObj.Key]).Value;
-                    if (CompareObjectVersion(oldObj.Version, newObj.Version) <= 0)
-                    { // newObj is not outdated
-                        ObjectCache[newObj.Key] = new CacheEntry(newObj);
-                        result = true;
-                    }
-                }
-                return result;
+                if(!TryGetObject(newObj.Key, out var oldObj) || CompareObjectVersion(oldObj.Version, newObj.Version) <= 0)
+                { // object does not exist or newObj version is not older than stored one -> apply write
+                    ObjectCache[newObj.Key] = new CacheEntry(newObj);
+                    status = true;
+                } 
             }
-            else // new object
+            
+            if(ObjectCache.Count == MAX_SIZE)
             {
-                if(ObjectCache.Count == MAX_SIZE)
-                {
-                    CleanCache();
-                }
-                ObjectCache[newObj.Key] = new CacheEntry(newObj);
+                CleanCache();
             }
-            return true;
+            
+            return status;
+        }
+
+
+        // gets object by key if exists. Updates access timestamp
+        private bool TryGetObject(ObjectId key, out ObjectInfo result)
+        {
+            result = null;
+            if (ObjectCache.TryGetValue(key, out var entry))
+            {
+                entry.Access();
+                result = entry.Value;
+                return true;
+            }
+            return false;
         }
 
         public int GetObjectCounter(ObjectId key)
         {
-            if(ObjectCache.TryGetValue(key, out var entry))
+            if(TryGetObject(key, out var obj))
             {
-                return entry.Value.Version.Counter;
+                return obj.Version.Counter;
             }
             return 0;
         }

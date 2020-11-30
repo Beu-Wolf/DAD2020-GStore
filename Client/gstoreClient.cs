@@ -99,8 +99,8 @@ namespace Client
             Console.WriteLine($"[READ] Requesting read: <{partition_id},{object_id}>");
 
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
-            { // specified server does not belong to the asked partition!
-                Console.WriteLine($"[READ] Specified server does not belong to partition {partition_id}");
+            { // current server does not belong to the asked partition!
+                Console.WriteLine($"[READ] Current server does not belong to partition {partition_id}");
             } else if (server_id == string.Empty || !TryConnectToServer(server_id))
             {
                 if (!TryConnectToPartition(partition_id))
