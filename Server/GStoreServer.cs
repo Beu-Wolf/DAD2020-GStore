@@ -40,7 +40,7 @@ namespace Server
             {
                 if (KeyValuePairs.TryGetValue(objectKey, out var currentObjectValue))
                 {
-                    if (CompareVersion(currentObjectValue.ObjectVersion, objectValue.ObjectVersion) > 0)
+                    if (CompareVersion(currentObjectValue.Version, objectValue.Version) > 0)
                     {
                         // Our version is bigger than received one, we don't care
                         return false;
@@ -57,8 +57,8 @@ namespace Server
             object objectLock = ObjectLocks.GetOrAdd(objectKey, new object());
             lock (objectLock)
             {
-                ObjectVersion newObjectVersion = GetNewVersion(objectValue.ObjectVersion, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.ObjectVersion : null);
-                objectValue.ObjectVersion = newObjectVersion;
+                ObjectVersion newObjectVersion = GetNewVersion(objectValue.Version, KeyValuePairs.TryGetValue(objectKey, out var objectInfo) ? objectInfo.Version : null);
+                objectValue.Version = newObjectVersion;
                 KeyValuePairs[objectKey] = objectValue;
                 return newObjectVersion;
             }
@@ -229,9 +229,7 @@ namespace Server
          */
         public ReadObjectReply Read(ReadObjectRequest request)
         {
-            Console.WriteLine("Received Read with params:");
-            Console.WriteLine($"Partition_id: {request.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Key.ObjectKey}");
+            Console.WriteLine($"[READ] Received Read with Key <{request.Key.PartitionId},{request.Key.ObjectKey}>");
 
             var requestedObject = new ObjectKey(request.Key);
 
@@ -243,6 +241,7 @@ namespace Server
                 {
                     Object = objectInfo
                 };
+                Console.WriteLine($"[READ] Success!");
                 return reply;
 
             }
@@ -254,16 +253,18 @@ namespace Server
 
         public WriteObjectReply Write(WriteObjectRequest request)
         {
-            Console.WriteLine("Received write with params:");
-            Console.WriteLine($"Partition_id: {request.Object.Key.PartitionId}");
-            Console.WriteLine($"Object_id: {request.Object.Key.ObjectKey}");
-            Console.WriteLine($"Value: {request.Object.Value}");
-            Console.WriteLine($"ObjectVersion: <{request.Object.ObjectVersion.Counter}, {request.Object.ObjectVersion.ClientId}>");
+            Console.WriteLine("[WRITE] Received write with params:");
+            Console.WriteLine($"[WRITE] Partition_id: {request.Object.Key.PartitionId}");
+            Console.WriteLine($"[WRITE] Object_id: {request.Object.Key.ObjectKey}");
+            Console.WriteLine($"[WRITE] Value: {request.Object.Value}");
+            Console.WriteLine($"[WRITE] ObjectVersion: <{request.Object.Version.Counter}, {request.Object.Version.ClientId}>");
 
             
 
             ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
             ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
+
+            Console.WriteLine($"[WRITE] Wrote to database");
             
             // Remove messages refering to same object but older
             RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
@@ -277,7 +278,7 @@ namespace Server
                 },
                 PartitionId = receivedObjectKey.Partition_id,
                 ObjectId = request.Object.Key,
-                ObjectVersion = request.Object.ObjectVersion,
+                ObjectVersion = request.Object.Version,
                 Value = request.Object.Value
             };
             
@@ -289,10 +290,10 @@ namespace Server
             {
                 BroadcastMessage(waitForFirstAck, propagationMessage.PartitionId, propagationMessage);
             });
-            
 
+            Console.WriteLine($"[WRITE] Waiting for first ack");
             // Lock this thread
-            lock(waitForFirstAck.WaitForInformationLock)
+            lock (waitForFirstAck.WaitForInformationLock)
             {
                 while (!waitForFirstAck.Value) Monitor.Wait(waitForFirstAck.WaitForInformationLock);
             }
@@ -451,13 +452,34 @@ namespace Server
 
         private void BroadcastMessage(BoolWrapper waitForFirstAck, string partitionId, PropagationMessage propagationMessage)
         {
-            foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId))
+            List<string> sentServerIds = new List<string>();
+
+            int count = 0;
+            do
             {
-                PropagateWrite(server.Key, server.Value, waitForFirstAck, propagationMessage);
-            } 
+                foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId && !sentServerIds.Contains(x.Key)))
+                {
+                    Console.WriteLine($"[BROADCAST] Trying to send to server {server.Key}");
+                    if(PropagateWrite(server.Key, server.Value, propagationMessage))
+                    {
+                        sentServerIds.Add(server.Key);
+                        if (count == 0)
+                        {
+                            lock (waitForFirstAck.WaitForInformationLock)
+                            {
+                                waitForFirstAck.Value = true;
+                                Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
+                            }
+                        }
+
+                        count++;
+                    }
+                }
+            } while (true);
+            
         }
 
-        private void PropagateWrite(string serverId, string serverUrl, BoolWrapper waitForFirstAck, PropagationMessage propagationMessage)
+        private bool PropagateWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
         {
             try
             {
@@ -467,27 +489,25 @@ namespace Server
                 {
                     SenderReplicaId = serverId,
                     PropMsg = propagationMessage
-                });
+                }, new CallOptions(deadline:DateTime.UtcNow.AddSeconds(2)));
                 // successful
-                lock(waitForFirstAck.WaitForInformationLock)
-                {
-                    waitForFirstAck.Value = true;
-                    Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
-                }
+                return true;
             }
             catch (RpcException e)
             {
-                if (e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
+                if (e.Status.StatusCode == StatusCode.DeadlineExceeded) {
+                    Console.WriteLine("[PROPAGATE] Server timed out");
+                }
+                else if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
                     // Trigger crash event for the server that crashed
-                    
                 }
                 else
                 {
                     throw e;
                 }
             }
+            return false;
         }
-
     }
 }
