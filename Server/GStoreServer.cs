@@ -23,7 +23,7 @@ namespace Server
 
         public Database()
         {
-            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>();
+            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>(new ObjectKey.ObjectKeyComparer());
             ObjectLocks = new ConcurrentDictionary<ObjectKey, object>();
         }
 
