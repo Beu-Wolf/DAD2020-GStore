@@ -24,7 +24,7 @@ namespace Server
         public Database()
         {
             KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>(new ObjectKey.ObjectKeyComparer());
-            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>();
+            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>(new ObjectKey.ObjectKeyComparer());
         }
 
         public bool TryGetValue(ObjectKey objectKey, out ObjectInfo objectValue)
@@ -141,7 +141,7 @@ namespace Server
 
         internal class ObjectMessages
         {
-            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>();
+            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>(new ObjectKey.ObjectKeyComparer());
             
             internal ObjectMessages(PropagationMessage propagationMessage)
             {
@@ -388,7 +388,7 @@ namespace Server
                 {
                     if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
                     {
-                        PropagateCrash(watchedReplica.Value);
+                        PropagateCrash(watchedReplica.Key, watchedReplica.Value); // TODO: Discuss if maybe only send Propagate Crash with Unavailable and Internal Exceptions
                     }
                     else
                     {
@@ -412,11 +412,11 @@ namespace Server
             {
                 // Remove messages refering to same object but older
                 RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
+                // add to retransmission buffers
+                RetransmissionBuffer.AddNewMessage(request.SenderReplicaId, request.PropMsg);
             }
 
-            // add to retransmission buffers
-            RetransmissionBuffer.AddNewMessage(request.SenderReplicaId, request.PropMsg);
-
+           
             return new PropagateWriteResponse { };
         }
 
@@ -426,14 +426,20 @@ namespace Server
             return new HeartbeatResponse { };
         }
 
-        public void PropagateCrash(string deadReplicaId)
+        public void PropagateCrash(string partitionId, string deadReplicaId)
         {
             Console.WriteLine("Propagating crash of " + deadReplicaId);
-            // Remove replica from correct replicas
-            CrashedServers.Add(deadReplicaId);
-            foreach (var serversByPartition in ServersByPartition)
+            RemoveDeadReplica(deadReplicaId);
+
+            // Tell other replicas of partition some replica died
+            foreach (var serverToSend in ServersByPartition[partitionId].Where(x => !x.Equals(MyId)))
             {
-                serversByPartition.Value.Remove(deadReplicaId);
+                var channel = GrpcChannel.ForAddress(ServerUrls[serverToSend]);
+                var server = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                server.ReportCrash(new ReportCrashRequest
+                {
+                    DeadReplicaId = deadReplicaId
+                });
             }
 
             // broadcast buffered replica messages
@@ -447,41 +453,22 @@ namespace Server
             // Remove buffered replica messages
             RetransmissionBuffer.RemoveReplica(deadReplicaId);
 
-            // Update watched replicas
-            foreach (var watchedPartition in WatchedReplicas.Keys)
-            {
-                if (WatchedReplicas[watchedPartition].Equals(deadReplicaId))
-                {
-                    Console.WriteLine("Updating watched replica of partition " + watchedPartition);
-                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
-                }
-            }
+            UpdateWatchedReplicas(deadReplicaId);
         }
 
         public ReportCrashResponse ReportCrash(ReportCrashRequest request)
         {
             Console.WriteLine("Received crash report of replica " + request.DeadReplicaId);
-            // Remove replica from correct replicas
-            CrashedServers.Add(request.DeadReplicaId);
-            foreach (var serversByPartition in ServersByPartition)
-            {
-                serversByPartition.Value.Remove(request.DeadReplicaId);
-            }
+            RemoveDeadReplica(request.DeadReplicaId);
 
             // Remove buffered replica messages
             RetransmissionBuffer.RemoveReplica(request.DeadReplicaId);
-
-            // Update watched replicas
-            foreach (var watchedPartition in WatchedReplicas.Keys)
-            {
-                if (WatchedReplicas[watchedPartition].Equals(request.DeadReplicaId))
-                {
-                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
-                }
-            }
+            UpdateWatchedReplicas(request.DeadReplicaId);
 
             return new ReportCrashResponse { };
         }
+
+        
 
 
         /*
@@ -636,7 +623,7 @@ namespace Server
                 }
                 else if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    PropagateCrash(serverId);            
+                    PropagateCrash(propagationMessage.PartitionId, serverId); // TODO: Discuss we maybe don't want to propagate here           
                 }
                 else
                 {
@@ -644,6 +631,18 @@ namespace Server
                 }
             }
             return false;
+        }
+
+        private void UpdateWatchedReplicas(string deadReplicaId)
+        {
+            // Update watched replicas
+            foreach (var watchedPartition in WatchedReplicas.Keys)
+            {
+                if (WatchedReplicas[watchedPartition].Equals(deadReplicaId))
+                {
+                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
+                }
+            }
         }
 
         private void SetWatchedReplica(string partitionId, List<string> serverIds)
@@ -656,6 +655,16 @@ namespace Server
             } else
             {
                 WatchedReplicas.TryRemove(partitionId, out string _); // we dont need to watch for ourselves
+            }
+        }
+
+        private void RemoveDeadReplica(string deadReplicaId)
+        {
+            // Remove replica from correct replicas
+            CrashedServers.Add(deadReplicaId);
+            foreach (var serversByPartition in ServersByPartition)
+            {
+                serversByPartition.Value.Remove(deadReplicaId);
             }
         }
     }
