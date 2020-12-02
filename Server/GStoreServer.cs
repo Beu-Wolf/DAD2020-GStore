@@ -388,9 +388,13 @@ namespace Server
                     }
                     catch (RpcException exception)
                     {
-                        if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
+                        if (exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
                         {
-                            PropagateCrash(watchedReplica.Key, watchedReplica.Value); // TODO: Discuss if maybe only send Propagate Crash with Unavailable and Internal Exceptions
+                            PropagateCrash(watchedReplica.Key, watchedReplica.Value);
+                        }
+                        else if(exception.Status.StatusCode == StatusCode.DeadlineExceeded)
+                        {
+                            Console.WriteLine($"Server {watchedReplica.Value} timed out...");
                         }
                         else
                         {
@@ -580,7 +584,7 @@ namespace Server
                 foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId && !sentServerIds.Contains(x.Key)))
                 {
                     Console.WriteLine($"[BROADCAST] Trying to send to server {server.Key}");
-                    if(PropagateWrite(server.Key, server.Value, propagationMessage))
+                    if(SendWrite(server.Key, server.Value, propagationMessage))
                     {
                         sentServerIds.Add(server.Key);
                         if (count == 0)
@@ -608,7 +612,7 @@ namespace Server
             
         }
 
-        private bool PropagateWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
+        private bool SendWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
         {
             try
             {
@@ -629,7 +633,10 @@ namespace Server
                 }
                 else if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    PropagateCrash(propagationMessage.PartitionId, serverId); // TODO: Discuss we maybe don't want to propagate here           
+                    Task.Run(() =>
+                    {
+                       PropagateCrash(propagationMessage.PartitionId, serverId); // TODO: Discuss we maybe don't want to propagate here           
+                    });
                 }
                 else
                 {
