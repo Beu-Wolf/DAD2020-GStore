@@ -375,25 +375,29 @@ namespace Server
         {
             foreach (var watchedReplica in WatchedReplicas)
             {
-                Console.WriteLine("Sending heartbeat to " + watchedReplica.Value);
-                try
+                Task.Run(() =>
                 {
-                    var channel = GrpcChannel.ForAddress(ServerUrls[watchedReplica.Value]);
-                    var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                    Console.WriteLine("Sending heartbeat to " + watchedReplica.Value);
+                    try
+                    {
+                        var channel = GrpcChannel.ForAddress(ServerUrls[watchedReplica.Value]);
+                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
 
-                    client.Heartbeat(new HeartbeatRequest());
-                    Console.WriteLine("Received Hearbeat of " + watchedReplica.Value);
-                } catch (RpcException exception)
-                {
-                    if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
-                    {
-                        PropagateCrash(watchedReplica.Key, watchedReplica.Value); // TODO: Discuss if maybe only send Propagate Crash with Unavailable and Internal Exceptions
+                        client.Heartbeat(new HeartbeatRequest());
+                        Console.WriteLine("Received Hearbeat of " + watchedReplica.Value);
                     }
-                    else
+                    catch (RpcException exception)
                     {
-                        throw exception;
+                        if (exception.Status.StatusCode == StatusCode.DeadlineExceeded || exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
+                        {
+                            PropagateCrash(watchedReplica.Key, watchedReplica.Value); // TODO: Discuss if maybe only send Propagate Crash with Unavailable and Internal Exceptions
+                        }
+                        else
+                        {
+                            throw exception;
+                        }
                     }
-                }
+                });
             }
         }
 
