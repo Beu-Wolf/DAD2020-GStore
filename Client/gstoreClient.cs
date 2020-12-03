@@ -260,9 +260,9 @@ namespace Client
                     ListGlobalRequest request = new ListGlobalRequest();
                     var reply = ConnectedServer.ListGlobal(request);
                     Console.WriteLine($"[LIST GLOBAL] Received from {serverId}:");
-                    foreach (var key in reply.Keys)
+                    foreach (var objectInfo in reply.Objects)
                     {
-                        Console.WriteLine($"[LIST GLOBAL]  -> object <{key.PartitionId}, {key.ObjectKey}>");
+                        Console.WriteLine($"[LIST GLOBAL]  -> object <{objectInfo.Key.PartitionId}, {objectInfo.Key.ObjectKey}> with version <{objectInfo.Version.ClientId}, {objectInfo.Version.Counter}> and value {objectInfo.Value}");
                     }
                 }
                 catch (RpcException e)

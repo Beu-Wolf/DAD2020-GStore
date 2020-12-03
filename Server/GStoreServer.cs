@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections;
 
 namespace Server
 {
@@ -205,7 +206,7 @@ namespace Server
         private Database Database;
 
         // Dictionary <partition_id, List<URLs>> all servers by partition
-        private ConcurrentDictionary<string, SynchronizedCollection<string>> ServersByPartition;
+        private ConcurrentDictionary<string, ArrayList> ServersByPartition;
 
         private ConcurrentDictionary<string, string> ServerUrls;
 
@@ -233,7 +234,7 @@ namespace Server
             MyId = myId;
             Interceptor = interceptor;
             Database = new Database();
-            ServersByPartition = new ConcurrentDictionary<string, SynchronizedCollection<string>>();
+            ServersByPartition = new ConcurrentDictionary<string, ArrayList>();
             ServerUrls = new ConcurrentDictionary<string, string>();
             CrashedServers = new ConcurrentBag<string>();
             WatchedReplicas = new ConcurrentDictionary<string, string>();
@@ -350,19 +351,15 @@ namespace Server
         public ListGlobalReply ListGlobal(ListGlobalRequest request)
         {
             Console.WriteLine("Received ListGlobal");
-            List<ObjectId> lst = new List<ObjectId>();
+            List<ObjectInfo> lst = new List<ObjectInfo>();
 
             List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
 
-            databaseObjects.ForEach(x => lst.Add( new ObjectId
-            {
-                PartitionId = x.Key.Partition_id,
-                ObjectKey = x.Key.Object_id
-            }));
+            databaseObjects.ForEach(x => lst.Add(x.Value));
 
             return new ListGlobalReply
             {
-                Keys = { lst }
+                Objects = { lst }
             };
         }
 
@@ -439,7 +436,7 @@ namespace Server
             RemoveDeadReplica(deadReplicaId);
 
             // Tell other replicas of partition some replica died
-            foreach (var serverToSend in ServersByPartition[partitionId].Where(x => !x.Equals(MyId)))
+            foreach (string serverToSend in ServersByPartition[partitionId].ToArray().Where(x => ! ((string)x).Equals(MyId)))
             {
                 var channel = GrpcChannel.ForAddress(ServerUrls[serverToSend]);
                 var server = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
@@ -487,7 +484,10 @@ namespace Server
             foreach (var server in ServersByPartition)
             {
                 Console.Write("Servers ");
-                server.Value.ToList().ForEach(x => Console.Write(x + " "));
+                foreach (string x in server.Value)
+                {
+                    Console.WriteLine(x + " ");
+                }
                 Console.Write($"from partition {server.Key}\r\n");
             }
             Console.WriteLine("Crashed Servers");
@@ -541,15 +541,15 @@ namespace Server
             Console.WriteLine("Received Partition Schema from pm");
             foreach (var partitionDetails in request.PartitionServers)
             {
-                // if already existed, do nothing
-                var list = new SynchronizedCollection<string>();
-                partitionDetails.Value.ServerIds.ToList().ForEach(x => list.Add(x));
-                if (ServersByPartition.TryAdd(partitionDetails.Key, list))
+                ArrayList synchronizedList = ArrayList.Synchronized(new ArrayList(partitionDetails.Value.ServerIds.ToList()));
+
+                if (ServersByPartition.TryAdd(partitionDetails.Key, synchronizedList))
                 {
                     // If we added a new partition, compute which server to check in heartbeat messages only if I belong to that partition
                     if (partitionDetails.Value.ServerIds.ToList().Contains(MyId))
-                        SetWatchedReplica(partitionDetails.Key, list);
+                        SetWatchedReplica(partitionDetails.Key, synchronizedList);
                 }
+                // if already existed, do nothing
             }
 
             foreach (var serverUrl in request.ServerUrls)
@@ -599,7 +599,7 @@ namespace Server
                         count++;
                     }
                 }
-            } while (!ServersByPartition[partitionId].Where(x => x!= MyId).All(x=>sentServerIds.Contains(x)));
+            } while (!ServersByPartition[partitionId].ToArray().Where(x => ((string)x)!= MyId).All(x=>sentServerIds.Contains(x)));
             // if count == 0 here, it means the foreach did not execute because we are the only server up in this partition
             if (count == 0)
             {
@@ -658,13 +658,13 @@ namespace Server
             }
         }
 
-        private void SetWatchedReplica(string partitionId, SynchronizedCollection<string> serverIds)
+        private void SetWatchedReplica(string partitionId, ArrayList serverIds)
         {
             if(serverIds.Count > 1)
             {
                 // Only makes sense to watch for replicas in partitions with more than 1 server
-                serverIds.OrderBy(x => x);
-                WatchedReplicas[partitionId] = serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
+                serverIds.ToArray().OrderBy(x => (string) x);
+                WatchedReplicas[partitionId] = (string)serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
             } else
             {
                 WatchedReplicas.TryRemove(partitionId, out string _); // we dont need to watch for ourselves
