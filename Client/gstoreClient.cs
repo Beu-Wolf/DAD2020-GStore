@@ -101,11 +101,12 @@ namespace Client
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
             { // current server does not belong to the asked partition!
                 Console.WriteLine($"[READ] Current server does not belong to partition {partition_id}");
-            } else if (server_id == string.Empty || !TryConnectToServer(server_id))
-            {
-                if (!TryConnectToPartition(partition_id))
+                if (server_id == string.Empty || !TryConnectToServer(server_id))
                 {
-                    return;
+                    if (!TryConnectToPartition(partition_id))
+                    {
+                        return;
+                    }
                 }
             }
 
