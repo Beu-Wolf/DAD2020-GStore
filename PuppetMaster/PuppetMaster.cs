@@ -9,6 +9,7 @@ using System.Security.Policy;
 using System.Linq;
 using System.Windows.Forms;
 using System.Threading.Channels;
+using Grpc.Core;
 
 namespace PuppetMaster
 {
@@ -621,7 +622,14 @@ namespace PuppetMaster
             }
 
             ServerInfo server = Servers[server_id];
-            server.Grpc.Crash(new CrashRequest());
+            try
+            {
+                server.Grpc.Crash(new CrashRequest());
+            }
+            catch(RpcException e)
+            {
+                // Success!
+            }
             this.Form.Log("Crashing server " + server_id);
 
             return;
