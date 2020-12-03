@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Grpc.Core;
@@ -27,6 +28,7 @@ namespace PCS
 
         public void LaunchClient(string host, int port, string scriptPath, int id)
         {
+            scriptPath = Path.Combine(Path.GetDirectoryName(ClientPath), scriptPath);
             var psi = new ProcessStartInfo(ClientPath, $"{host} {port} {scriptPath} {id}")
             {
                 UseShellExecute = true
