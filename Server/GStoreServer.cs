@@ -3,11 +3,13 @@ using Grpc.Core.Interceptors;
 using Grpc.Core.Utils;
 using Grpc.Net.Client;
 using System;
+using System.Timers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections;
 
 namespace Server
 {
@@ -22,8 +24,8 @@ namespace Server
 
         public Database()
         {
-            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>();
-            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>();
+            KeyValuePairs = new ConcurrentDictionary<ObjectKey, ObjectInfo>(new ObjectKey.ObjectKeyComparer());
+            ObjectLocks = new ConcurrentDictionary<ObjectKey, object>(new ObjectKey.ObjectKeyComparer());
         }
 
         public bool TryGetValue(ObjectKey objectKey, out ObjectInfo objectValue)
@@ -140,13 +142,24 @@ namespace Server
 
         internal class ObjectMessages
         {
-            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>();
+            internal ConcurrentDictionary<ObjectKey, PropagationMessage> MessagesByPartition = new ConcurrentDictionary<ObjectKey, PropagationMessage>(new ObjectKey.ObjectKeyComparer());
             
             internal ObjectMessages(PropagationMessage propagationMessage)
             {
                 MessagesByPartition[new ObjectKey(propagationMessage.ObjectId)] = propagationMessage;
             }
         
+        }
+
+        public List<PropagationMessage> GetReplicaPropMessages(string replicaId)
+        {
+            lock(OperationLock)
+            {
+                List<PropagationMessage> lst = new List<PropagationMessage>();
+                if (ReplicaReceivedMessages.ContainsKey(replicaId))
+                    ReplicaReceivedMessages[replicaId].PartitionMessages.Keys.ToList().ForEach(x => lst.AddRange(ReplicaReceivedMessages[replicaId].PartitionMessages[x].MessagesByPartition.Values));
+                return lst;
+            }
         }
 
         public void RemoveObjectFromBuffer(ObjectKey objectKey)
@@ -178,6 +191,11 @@ namespace Server
             }
 
         }
+
+        public void RemoveReplica(string deadReplicaId)
+        {
+            ReplicaReceivedMessages.Remove(deadReplicaId, out ReceivedMessages receivedMessages);
+        }
     }
 
 
@@ -188,8 +206,7 @@ namespace Server
         private Database Database;
 
         // Dictionary <partition_id, List<URLs>> all servers by partition
-        private ConcurrentDictionary<string, List<string>> ServersByPartition;
-
+        private ConcurrentDictionary<string, SynchronizedCollection<string>> ServersByPartition;
 
         private ConcurrentDictionary<string, string> ServerUrls;
 
@@ -210,19 +227,32 @@ namespace Server
 
         private readonly object IncrementCounterLock = new object();
 
+        private static System.Timers.Timer HeartbeatTimer;
+
+
         public GStoreServer(string myId, DelayMessagesInterceptor interceptor)
         {
             MyId = myId;
             Interceptor = interceptor;
             Database = new Database();
-            ServersByPartition = new ConcurrentDictionary<string, List<string>>();
+            ServersByPartition = new ConcurrentDictionary<string, SynchronizedCollection<string>>();
             ServerUrls = new ConcurrentDictionary<string, string>();
             CrashedServers = new ConcurrentBag<string>();
             WatchedReplicas = new ConcurrentDictionary<string, string>();
             RetransmissionBuffer = new RetransmissionBuffer();
+
+            SetHeartbeatTimer();
         }
 
-        
+        private void SetHeartbeatTimer()
+        {
+            HeartbeatTimer = new System.Timers.Timer(5000);
+            HeartbeatTimer.Elapsed += HeartbeatEvent;
+            HeartbeatTimer.AutoReset = true;
+            HeartbeatTimer.Enabled = true;
+        }
+
+
 
         /*
          *  GStoreService Implementation
@@ -235,15 +265,13 @@ namespace Server
 
             if (Database.TryGetValue(requestedObject, out ObjectInfo objectInfo))
             {
-
-
                 ReadObjectReply reply = new ReadObjectReply
                 {
                     Object = objectInfo
                 };
                 Console.WriteLine($"[READ] Success!");
-                return reply;
 
+                return reply;
             }
             else
             {
@@ -263,7 +291,6 @@ namespace Server
 
             ObjectKey receivedObjectKey = new ObjectKey(request.Object.Key);
             ObjectVersion newObjectVersion = Database.TryClientWrite(receivedObjectKey, request.Object);
-
             Console.WriteLine($"[WRITE] Wrote to database");
             
             // Remove messages refering to same object but older
@@ -284,7 +311,7 @@ namespace Server
             
             BoolWrapper waitForFirstAck = new BoolWrapper(false);
 
-              
+            
             // Paralelyze
             Task.Run(() =>
             {
@@ -297,6 +324,8 @@ namespace Server
             {
                 while (!waitForFirstAck.Value) Monitor.Wait(waitForFirstAck.WaitForInformationLock);
             }
+            
+            
             return new WriteObjectReply
             {
                 NewVersion = newObjectVersion
@@ -324,19 +353,15 @@ namespace Server
         public ListGlobalReply ListGlobal(ListGlobalRequest request)
         {
             Console.WriteLine("Received ListGlobal");
-            List<ObjectId> lst = new List<ObjectId>();
+            List<ObjectInfo> lst = new List<ObjectInfo>();
 
             List<KeyValuePair<ObjectKey, ObjectInfo>> databaseObjects = Database.ReadAllDatabase();
 
-            databaseObjects.ForEach(x => lst.Add( new ObjectId
-            {
-                PartitionId = x.Key.Partition_id,
-                ObjectKey = x.Key.Object_id
-            }));
+            databaseObjects.ForEach(x => lst.Add(x.Value));
 
             return new ListGlobalReply
             {
-                Keys = { lst }
+                Objects = { lst }
             };
         }
 
@@ -344,22 +369,112 @@ namespace Server
         /*
          *  ServerSyncService Implementation
          */
+
+        public void HeartbeatEvent(Object source, ElapsedEventArgs eventArgs)
+        {
+            foreach (var watchedReplica in WatchedReplicas)
+            {
+                Task.Run(() =>
+                {
+                    Console.WriteLine("Sending heartbeat to " + watchedReplica.Value);
+                    try
+                    {
+                        var channel = GrpcChannel.ForAddress(ServerUrls[watchedReplica.Value]);
+                        var client = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+
+                        client.Heartbeat(new HeartbeatRequest());
+                        Console.WriteLine("Received Hearbeat of " + watchedReplica.Value);
+                    }
+                    catch (RpcException exception)
+                    {
+                        if (exception.Status.StatusCode == StatusCode.Unavailable || exception.Status.StatusCode == StatusCode.Internal)
+                        {
+                            PropagateCrash(watchedReplica.Key, watchedReplica.Value);
+                        }
+                        else if(exception.Status.StatusCode == StatusCode.DeadlineExceeded)
+                        {
+                            Console.WriteLine($"Server {watchedReplica.Value} timed out...");
+                        }
+                        else
+                        {
+                            throw exception;
+                        }
+                    }
+                });
+            }
+        }
+
         public PropagateWriteResponse PropagateWrite(PropagateWriteRequest request)
         {
-            Console.WriteLine("Received Propagate Write");
-            
+            Console.WriteLine($"Received Propagate Write message <{request.PropMsg.Id.AuthorReplicaId}, {request.PropMsg.Id.AuthorReplicaId}> from {request.SenderReplicaId}");
+            ObjectKey receivedObjectKey = new ObjectKey(request.PropMsg.ObjectId);
+            ObjectInfo receivedObjectInfo = new ObjectInfo
+            {
+                Key = request.PropMsg.ObjectId,
+                Version = request.PropMsg.ObjectVersion,
+                Value = request.PropMsg.Value
+            };
+            if (Database.TryReplicaWrite(receivedObjectKey, receivedObjectInfo))
+            {
+                // Remove messages refering to same object but older
+                RetransmissionBuffer.RemoveObjectFromBuffer(receivedObjectKey);
+                // add to retransmission buffers
+                RetransmissionBuffer.AddNewMessage(request.SenderReplicaId, request.PropMsg);
+            }
+
+           
             return new PropagateWriteResponse { };
         }
 
         public HeartbeatResponse Heartbeat()
         {
+            Console.WriteLine("Heartbeat Received");
             return new HeartbeatResponse { };
+        }
+
+        public void PropagateCrash(string partitionId, string deadReplicaId)
+        {
+            Console.WriteLine("Propagating crash of " + deadReplicaId);
+            RemoveDeadReplica(deadReplicaId);
+
+            // Tell other replicas of partition some replica died
+            foreach (var serverToSend in ServersByPartition[partitionId].Where(x => !x.Equals(MyId)))
+            {
+                var channel = GrpcChannel.ForAddress(ServerUrls[serverToSend]);
+                var server = new ServerSyncGrpcService.ServerSyncGrpcServiceClient(channel);
+                server.ReportCrash(new ReportCrashRequest
+                {
+                    DeadReplicaId = deadReplicaId
+                });
+            }
+
+            // broadcast buffered replica messages
+            // Do we need it to be parallel?
+            var propMessages = RetransmissionBuffer.GetReplicaPropMessages(deadReplicaId);
+            propMessages.ForEach(x =>
+            {
+                BroadcastMessage(new BoolWrapper(false), x.PartitionId, x);
+            });
+
+            // Remove buffered replica messages
+            RetransmissionBuffer.RemoveReplica(deadReplicaId);
+
+            UpdateWatchedReplicas(deadReplicaId);
         }
 
         public ReportCrashResponse ReportCrash(ReportCrashRequest request)
         {
+            Console.WriteLine("Received crash report of replica " + request.DeadReplicaId);
+            RemoveDeadReplica(request.DeadReplicaId);
+
+            // Remove buffered replica messages
+            RetransmissionBuffer.RemoveReplica(request.DeadReplicaId);
+            UpdateWatchedReplicas(request.DeadReplicaId);
+
             return new ReportCrashResponse { };
         }
+
+        
 
 
         /*
@@ -371,7 +486,7 @@ namespace Server
             foreach (var server in ServersByPartition)
             {
                 Console.Write("Servers ");
-                server.Value.ForEach(x => Console.Write(x + " "));
+                server.Value.ToList().ForEach(x => Console.Write(x + " "));
                 Console.Write($"from partition {server.Key}\r\n");
             }
             Console.WriteLine("Crashed Servers");
@@ -426,7 +541,14 @@ namespace Server
             foreach (var partitionDetails in request.PartitionServers)
             {
                 // if already existed, do nothing
-                ServersByPartition.TryAdd(partitionDetails.Key, partitionDetails.Value.ServerIds.ToList());
+                var list = new SynchronizedCollection<string>();
+                partitionDetails.Value.ServerIds.ToList().ForEach(x => list.Add(x));
+                if (ServersByPartition.TryAdd(partitionDetails.Key, list))
+                {
+                    // If we added a new partition, compute which server to check in heartbeat messages only if I belong to that partition
+                    if (partitionDetails.Value.ServerIds.ToList().Contains(MyId))
+                        SetWatchedReplica(partitionDetails.Key, list);
+                }
             }
 
             foreach (var serverUrl in request.ServerUrls)
@@ -436,6 +558,7 @@ namespace Server
                     ServerUrls[serverUrl.Key] = serverUrl.Value;
                 }
             }
+            
 
             return new PartitionSchemaReply();
         }
@@ -460,7 +583,7 @@ namespace Server
                 foreach (var server in ServerUrls.Where(x => ServersByPartition[partitionId].Contains(x.Key) && x.Key != MyId && !sentServerIds.Contains(x.Key)))
                 {
                     Console.WriteLine($"[BROADCAST] Trying to send to server {server.Key}");
-                    if(PropagateWrite(server.Key, server.Value, propagationMessage))
+                    if(SendWrite(server.Key, server.Value, propagationMessage))
                     {
                         sentServerIds.Add(server.Key);
                         if (count == 0)
@@ -475,11 +598,20 @@ namespace Server
                         count++;
                     }
                 }
-            } while (true);
+            } while (!ServersByPartition[partitionId].Where(x => x!= MyId).All(x=>sentServerIds.Contains(x)));
+            // if count == 0 here, it means the foreach did not execute because we are the only server up in this partition
+            if (count == 0)
+            {
+                lock (waitForFirstAck.WaitForInformationLock)
+                {
+                    waitForFirstAck.Value = true;
+                    Monitor.PulseAll(waitForFirstAck.WaitForInformationLock);
+                }
+            }
             
         }
 
-        private bool PropagateWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
+        private bool SendWrite(string serverId, string serverUrl, PropagationMessage propagationMessage)
         {
             try
             {
@@ -500,7 +632,10 @@ namespace Server
                 }
                 else if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
-                    // Trigger crash event for the server that crashed
+                    Task.Run(() =>
+                    {
+                       PropagateCrash(propagationMessage.PartitionId, serverId); // TODO: Discuss we maybe don't want to propagate here           
+                    });
                 }
                 else
                 {
@@ -508,6 +643,41 @@ namespace Server
                 }
             }
             return false;
+        }
+
+        private void UpdateWatchedReplicas(string deadReplicaId)
+        {
+            // Update watched replicas
+            foreach (var watchedPartition in WatchedReplicas.Keys)
+            {
+                if (WatchedReplicas[watchedPartition].Equals(deadReplicaId))
+                {
+                    SetWatchedReplica(watchedPartition, ServersByPartition[watchedPartition]);
+                }
+            }
+        }
+
+        private void SetWatchedReplica(string partitionId, SynchronizedCollection<string> serverIds)
+        {
+            if(serverIds.Count > 1)
+            {
+                // Only makes sense to watch for replicas in partitions with more than 1 server
+                serverIds.OrderBy(x => x);
+                WatchedReplicas[partitionId] = serverIds[(serverIds.IndexOf(MyId) + 1) % serverIds.Count];
+            } else
+            {
+                WatchedReplicas.TryRemove(partitionId, out string _); // we dont need to watch for ourselves
+            }
+        }
+
+        private void RemoveDeadReplica(string deadReplicaId)
+        {
+            // Remove replica from correct replicas
+            CrashedServers.Add(deadReplicaId);
+            foreach (var serversByPartition in ServersByPartition)
+            {
+                serversByPartition.Value.Remove(deadReplicaId);
+            }         
         }
     }
 }

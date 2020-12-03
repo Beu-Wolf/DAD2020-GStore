@@ -54,5 +54,5 @@ message ListServerReply {
 }
 
 message ListGlobalReply {
-	repeated ObjectId keys = 1;	
+	repeated ObjectInfo objects = 1;	
 }

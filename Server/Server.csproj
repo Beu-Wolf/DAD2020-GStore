@@ -18,4 +18,10 @@
 	  <Protobuf Include="..\Protos\PuppetMasterServer.proto" GrpcServices="Server" Link="protos\PuppetMasterServer.proto" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="System.ServiceModel">
+      <HintPath>..\References\System.ServiceModel.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

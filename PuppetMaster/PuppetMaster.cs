@@ -594,12 +594,32 @@ namespace PuppetMaster
             {
                 foreach (var server in Servers.Values)
                 {
-                    server.Grpc.Status(new ServerStatusRequest());
+                    try
+                    {
+                        server.Grpc.Status(new ServerStatusRequest());
+                    }
+                    catch (RpcException e)
+                    {
+                        if(!(e.Status.StatusCode == StatusCode.Internal || e.Status.StatusCode == StatusCode.Unavailable))
+                        {
+                            throw e;
+                        }
+                    }
                 }
 
                 foreach (var client in Clients.Values)
                 {
-                    client.Grpc.Status(new ClientStatusRequest());
+                    try
+                    { 
+                        client.Grpc.Status(new ClientStatusRequest());
+                    }
+                    catch (RpcException e)
+                    {
+                        if (!(e.Status.StatusCode == StatusCode.Internal || e.Status.StatusCode == StatusCode.Unavailable))
+                        {
+                            throw e;
+                        }
+                    }
                 }
             });
 

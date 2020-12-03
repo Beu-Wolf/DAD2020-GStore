@@ -5,6 +5,7 @@ using System.Collections.Concurrent;
 using Grpc.Net.Client;
 using Grpc.Core;
 using System.Linq;
+using System.Diagnostics;
 
 namespace Client
 {
@@ -36,6 +37,16 @@ namespace Client
         private int Id;
 
 
+        private object readCounterLock = new object();
+        private long ReadTotalTime = 0;
+        private long NumReads = 0;
+        private long NumReadFails = 0;
+
+        private object writeCounterLock = new object();
+        private long WriteTotalTime = 0;
+        private long NumWrites = 0;
+        private long NumWriteFails = 0;
+
         public GStoreClient(int id)
         {
             Id = id;
@@ -46,6 +57,15 @@ namespace Client
             ObjectCache = new Cache();
         }
 
+        public void PrintTimes()
+        {
+            Console.WriteLine("Finished executing.");
+            float avgRead = ReadTotalTime / NumReads;
+            // float avgWrite = WriteTotalTime / NumWrites;
+
+            Console.WriteLine($"READ: {ReadTotalTime} / {NumReads} => {avgRead} ({NumReadFails} failed)");
+            // Console.WriteLine($"WRIT: {WriteTotalTime} / {NumWrites} => {avgWrite} ({NumWriteFails} failed)");
+        }
 
         private bool TryConnectToServer(string server_id)
         {
@@ -101,11 +121,12 @@ namespace Client
             if (!ServersIdByPartition[partition_id].Contains(currentServerId))
             { // current server does not belong to the asked partition!
                 Console.WriteLine($"[READ] Current server does not belong to partition {partition_id}");
-            } else if (server_id == string.Empty || !TryConnectToServer(server_id))
-            {
-                if (!TryConnectToPartition(partition_id))
+                if (server_id == string.Empty || !TryConnectToServer(server_id))
                 {
-                    return;
+                    if (!TryConnectToPartition(partition_id))
+                    {
+                        return;
+                    }
                 }
             }
 
@@ -118,15 +139,24 @@ namespace Client
                 }
             };
 
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
             ReadObjectReply reply;
             try
             {
                 reply = ConnectedServer.ReadObject(request);
+                sw.Stop();
+
+                lock (readCounterLock)
+                {
+                    ReadTotalTime += sw.ElapsedMilliseconds;
+                    NumReads += 1;
+                }
             }
             catch (RpcException e)
             {
                 // If error is because Server failed, update list of crashed Servers
-                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
                     HandleCrashedServer(currentServerId);
                 }
@@ -135,6 +165,15 @@ namespace Client
                 Console.WriteLine($"[READ] Error: {e.Status.StatusCode}");
                 Console.WriteLine($"[READ] Error message: {e.Status.Detail}");
                 Console.WriteLine("[READ] N/A");
+                sw.Stop();
+
+                lock(readCounterLock)
+                {
+                    ReadTotalTime += sw.ElapsedMilliseconds;
+                    NumReadFails += 1;
+                    NumReads += 1;
+                }
+
                 return;
             }
 
@@ -179,6 +218,8 @@ namespace Client
                 }
             };
             bool success = false;
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
             do
             {
                 try
@@ -198,20 +239,36 @@ namespace Client
                     success = true;
                 } catch (RpcException e)
                 {
-                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                    if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                     {
                         // remove crashed server so we don't pick it again
                         HandleCrashedServer(currentServerId);
                     }
                     else
                     {
+                        sw.Stop();
+                        lock (writeCounterLock)
+                        {
+                            WriteTotalTime += sw.ElapsedMilliseconds;
+                            NumWrites += 1;
+                        }
                         throw e;
                     }
                 }
             } while (!success && TryConnectToPartition(partition_id));
+            sw.Stop();
+            lock(writeCounterLock)
+            {
+                WriteTotalTime += sw.ElapsedMilliseconds;
+                NumWrites += 1;
+            }
 
             if(!success)
             {
+                lock(writeCounterLock)
+                {
+                    NumWriteFails += 1;
+                }
                 Console.WriteLine("[WRITE] Failed to write value. Every server was down.");
             }
         }
@@ -235,8 +292,9 @@ namespace Client
             }
             catch (RpcException e)
             {
-                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                 {
+                    Console.WriteLine(e.Status);
                     HandleCrashedServer(server_id);
                 }
                 else
@@ -260,9 +318,9 @@ namespace Client
                     ListGlobalRequest request = new ListGlobalRequest();
                     var reply = ConnectedServer.ListGlobal(request);
                     Console.WriteLine($"[LIST GLOBAL] Received from {serverId}:");
-                    foreach (var key in reply.Keys)
+                    foreach (var objectInfo in reply.Objects)
                     {
-                        Console.WriteLine($"[LIST GLOBAL]  -> object <{key.PartitionId}, {key.ObjectKey}>");
+                        Console.WriteLine($"[LIST GLOBAL]  -> object <{objectInfo.Key.PartitionId}, {objectInfo.Key.ObjectKey}> with version <{objectInfo.Version.ClientId}, {objectInfo.Version.Counter}> and value {objectInfo.Value}");
                     }
                 }
                 catch (RpcException e)

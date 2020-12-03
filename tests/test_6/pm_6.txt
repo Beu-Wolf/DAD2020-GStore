@@ -1,0 +1,15 @@
+ReplicationFactor 4
+Partition 4 pA sA1 sA2 sA3 sA4
+Partition 4 pB sB1 sB2 sB3 sB4
+Server sA1 http://localhost:3000 0 0
+Server sB1 http://localhost:3001 0 0
+Server sA2 http://localhost:3002 0 0
+Server sB2 http://localhost:3003 0 0
+Server sA3 http://localhost:3004 0 0
+Server sB3 http://localhost:3005 0 0
+Server sA4 http://localhost:3006 0 0
+Server sB4 http://localhost:3007 0 0
+Client c01 http://localhost:3008 script_6_c01
+Client c02 http://localhost:3009 script_6_c02
+Client c03 http://localhost:3010 script_6_c03
+Client c04 http://localhost:3011 script_6_c04
