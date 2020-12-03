@@ -6,6 +6,7 @@ using Grpc.Core;
 using System.Linq;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Diagnostics;
 
 namespace Client
 {
@@ -35,6 +36,16 @@ namespace Client
         private string currentServerId = "-1";
         private int Id;
 
+        private object readCounterLock = new object();
+        private long ReadTotalTime = 0;
+        private long NumReads = 0;
+        private long NumReadFails = 0;
+
+        private object writeCounterLock = new object();
+        private long WriteTotalTime = 0;
+        private long NumWrites = 0;
+        private long NumWriteFails = 0;
+
 
         public GSTOREClient(int id, ConcurrentDictionary<string, List<string>> serversIdByPartition, ConcurrentDictionary<string, string> serverUrls, ConcurrentBag<string> crashedServers)
         {
@@ -42,6 +53,16 @@ namespace Client
             ServersIdByPartition = serversIdByPartition;
             ServerUrls = serverUrls;
             CrashedServers = crashedServers;
+        }
+
+        public void PrintTimes()
+        {
+            Console.WriteLine("Finished executing.");
+            float avgRead = ReadTotalTime / NumReads;
+            float avgWrite = WriteTotalTime / NumWrites;
+
+            Console.WriteLine($"READ: {ReadTotalTime} / {NumReads} => {avgRead} ({NumReadFails} failed)");
+            Console.WriteLine($"WRIT: {WriteTotalTime} / {NumWrites} => {avgWrite} ({NumWriteFails} failed)");
         }
 
         public bool TryChangeCommunicationChannel(string server_id)
@@ -67,6 +88,10 @@ namespace Client
             if(ServersIdByPartition[partition_id].Count == 0)
             {
                 Console.WriteLine($"No available server for partition {partition_id}");
+                lock (writeCounterLock)
+                {
+                    NumReadFails++;
+                }
                 return;
             }
 
@@ -92,14 +117,26 @@ namespace Client
                     ObjectId = object_id
                 }
             };
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
             try
             {
                 var reply = Client.ReadObject(request);
+                sw.Stop();
+                lock (readCounterLock)
+                {
+                    NumReads += 1;
+                }
                 Console.WriteLine("Received: " + reply.Value);
             } catch (RpcException e)
             {
+                sw.Stop();
+                lock(readCounterLock)
+                {
+                    NumReadFails += 1;
+                }
                 // If error is because Server failed, update list of crashed Servers
-                if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                if (e.Status.StatusCode == StatusCode.Unavailable ||  e.Status.StatusCode == StatusCode.Internal)
                 {
                     UpdateCrashedServersList();
                 }
@@ -107,6 +144,11 @@ namespace Client
                 Console.WriteLine($"Error: {e.Status.StatusCode}");
                 Console.WriteLine($"Error message: {e.Status.Detail}");
                 Console.WriteLine("N/A");
+            }
+
+            lock (readCounterLock)
+            {
+                ReadTotalTime += sw.ElapsedMilliseconds;
             }
         }
 
@@ -119,6 +161,10 @@ namespace Client
             if (ServersOfPartition.Count == 0)
             {
                 Console.WriteLine($"No available servers for partition {partition_id}");
+                lock (writeCounterLock)
+                {
+                    NumWriteFails++;
+                }
                 return;
             }
 
@@ -145,6 +191,8 @@ namespace Client
                 Value = value
             };
             var crashedServers = new ConcurrentBag<string>();
+            Stopwatch sw = new Stopwatch();
+            sw.Start();
             while (!success && numTries < ServersOfPartition.Count)
             {
                 try
@@ -159,7 +207,7 @@ namespace Client
                         Console.WriteLine($"Cannot write in server {currentServerId}");
                     } else {
                         // If error is because Server failed, keep it
-                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.DeadlineExceeded || e.Status.StatusCode == StatusCode.Internal)
+                        if (e.Status.StatusCode == StatusCode.Unavailable || e.Status.StatusCode == StatusCode.Internal)
                         {
                             Console.WriteLine($"Server {currentServerId} is down");
                             crashedServers.Add(currentServerId);
@@ -178,6 +226,19 @@ namespace Client
                     }
 
                 }
+            }
+
+            sw.Stop();
+            lock (writeCounterLock)
+            {
+                if(!success)
+                {
+                    NumWriteFails += 1;
+                } else
+                {
+                    WriteTotalTime += sw.ElapsedMilliseconds;
+                }
+                NumWrites += 1;
             }
 
             // Remove crashed servers from list and update CrashedServers list
@@ -342,6 +403,8 @@ namespace Client
                 }
 
                 file.Close();
+
+                client.PrintTimes();
 
                 // We need to stay up, in order to respond to status commands by the Puppet Master
                 // Start gRPC server of connection with PM
