@@ -5,6 +5,6 @@ Server sA1 http://localhost:3000 0 0
 Server sB1 http://localhost:3001 0 0
 Server sA2 http://localhost:3002 0 0
 Server sB2 http://localhost:3003 0 0
-Client c01 http://localhost:3004 script_3_c01.txt
-Client c02 http://localhost:3005 script_3_c02.txt
-Client c03 http://localhost:3006 script_3_c03.txt
+Client c01 http://localhost:3004 script_3_c01
+Client c02 http://localhost:3005 script_3_c02
+Client c03 http://localhost:3006 script_3_c03

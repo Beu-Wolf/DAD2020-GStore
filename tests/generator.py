@@ -167,7 +167,7 @@ pm para
 leitor passa a ler apenas da frozen replica
 pm faz unfreeze da replica frozen
 '''
-partitions = ["A", "B"]
+partitions = ["pA", "pB"]
 servers_per_partition = 3
 n_clients = 2
 port = 3000
@@ -181,7 +181,7 @@ for server in server_ids:
     port += 1
 
 for client in clients:
-    c_script_name = f'script_4_{client}.txt'
+    c_script_name = f'script_4_{client}'
     pm_script += f'\nClient {client} http://localhost:{port} {c_script_name}'
     port += 1
 
