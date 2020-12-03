@@ -68,6 +68,8 @@ namespace Client
 
                 file.Close();
 
+                client.PrintTimes();
+
                 // We need to stay up, in order to respond to status commands by the Puppet Master
                 // Start gRPC server of connection with PM
                 // For now, just wait for user input

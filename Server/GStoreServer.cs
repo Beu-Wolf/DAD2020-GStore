@@ -229,6 +229,7 @@ namespace Server
 
         private static System.Timers.Timer HeartbeatTimer;
 
+
         public GStoreServer(string myId, DelayMessagesInterceptor interceptor)
         {
             MyId = myId;
@@ -269,6 +270,7 @@ namespace Server
                     Object = objectInfo
                 };
                 Console.WriteLine($"[READ] Success!");
+
                 return reply;
             }
             else
