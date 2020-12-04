@@ -626,7 +626,7 @@ namespace PuppetMaster
             {
                 server.Grpc.Crash(new CrashRequest());
             }
-            catch(RpcException e)
+            catch(RpcException)
             {
                 // Success!
             }
