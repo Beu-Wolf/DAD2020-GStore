@@ -58,8 +58,18 @@ namespace Client
         public void PrintTimes()
         {
             Console.WriteLine("Finished executing.");
-            float avgRead = ReadTotalTime / NumReads;
-            float avgWrite = WriteTotalTime / NumWrites;
+            float avgRead = 0;
+            float avgWrite = 0;
+
+            if (NumReads > 0)
+            {
+                avgRead = ReadTotalTime / NumReads;
+            }
+
+            if(NumWrites > 0)
+            {
+                avgWrite = WriteTotalTime / NumWrites;
+            }
 
             Console.WriteLine($"READ: {ReadTotalTime} / {NumReads} => {avgRead} ({NumReadFails} failed)");
             Console.WriteLine($"WRIT: {WriteTotalTime} / {NumWrites} => {avgWrite} ({NumWriteFails} failed)");
